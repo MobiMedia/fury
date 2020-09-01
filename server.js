@@ -1,6 +1,6 @@
 const express = require('express');
 const app = express();
-const port = process.env.port || 3000;
+const port = process.env.PORT || 3000;
 const Browser = require("./src/Browser.js");
 
 app.use(express.json())
@@ -13,10 +13,10 @@ app.post("/screenshot", async (req, res) => {
   try {
     image = await Browser.screenshot(req.body);
   } catch (e) {
-    error = e.stack;
+    error = e.stack || e.toString();
   }
 
-  res.send({image: image, error: error});
+  res.send({data: image, error: error});
 });
 
 app.listen(port, () => {

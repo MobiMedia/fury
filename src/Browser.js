@@ -1,71 +1,48 @@
 const puppeteer = require("puppeteer");
-
-const
-  puppeteerParams = (width, height, isLandscape) => {
-    return {
-      headless: true,
-      devtools: false,
-      ignoreHTTPSErrors: true,
-      defaultViewport: {
-        width: width || 1920,
-        height: height || 1080,
-        isLandscape: !!isLandscape
-      }
-    };
-  };
+const BrowserUtils = require("./BrowserUtils.js");
 
 exports.screenshot = async (params = {}) => {
   const
-    {url, width, height, cookies, renderEventName} = params;
+    {url, width, height, cookies, renderEventName, timeout} = params;
+  let
+    browser,
+    imageData;
 
   // We need to have an url parameter to proceed
   if (!url) {
     return;
   }
 
-  const
-    browser = await puppeteer.launch(puppeteerParams(width, height, false)),
-    page = await browser.newPage();
-
-  if (cookies) {
+  try {
+    browser = await puppeteer.launch(BrowserUtils.getPuppeteerParams(width, height, false));
     const
-      mappedCookies = Object.keys(cookies).map((key) => {
-        return {
-          name: key,
-          value: cookies[key],
-          url: url
-        };
-      });
+      page = await browser.newPage();
 
-    await page.setCookie.apply(page, mappedCookies);
-  }
+    page.setDefaultTimeout(timeout || 30 * 1000);
 
-  // If we have to wait with the rendering for a specific Function call, we have
-  // to expose the given EventName to the page und resolve the Promise after calling
-  // this function
-  let eventPromise;
-  if (renderEventName) {
-    eventPromise = new Promise((resolve) => {
-      page.exposeFunction(renderEventName, () => {
-        resolve();
-      });
+    await BrowserUtils.setCookies(page, cookies, url);
+
+    const
+      renderEventPromise = BrowserUtils.getRenderEventPromise(page, renderEventName, timeout);
+
+    await page.goto(url, {
+      waitUntil: "networkidle0"
     });
-  } else {
-    eventPromise = Promise.resolve();
+
+    // Wait for the renderEvent...If it isn't defined, this will resolve immediately
+    await renderEventPromise;
+
+    imageData = await page.screenshot({
+      quality: 100,
+      encoding: "base64",
+      type: "jpeg",
+    });
+
+    return imageData;
+  } finally {
+    // Always close Browser to prevent memory leaks!
+    if (browser) {
+      await browser.close();
+    }
   }
-
-  await page.goto(url);
-
-  // Wait for the renderEvent...If it isn't defined, this will resolve immediately
-  await eventPromise;
-
-  const imageData = await page.screenshot({
-    quality: 100,
-    encoding: "base64",
-    type: "jpeg",
-  });
-
-  await browser.close();
-
-  return imageData;
 };
