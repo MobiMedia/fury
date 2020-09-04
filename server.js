@@ -3,7 +3,7 @@ const app = express();
 const port = process.env.PORT || 3000;
 const Browser = require("./src/Browser.js");
 
-app.use(express.json())
+app.use(express.json({limit: "100mb"}));
 
 app.post("/screenshot", async (req, res) => {
   let
@@ -17,6 +17,20 @@ app.post("/screenshot", async (req, res) => {
   }
 
   res.send({data: image, error: error});
+});
+
+app.post("/pdf", async (req, res) => {
+  let
+    pdf = null,
+    error = null;
+  
+  try {
+    pdf = await Browser.pdf(req.body);
+  } catch (e) {
+    error = e.stack || e.toString();
+  }
+
+  res.send({data: pdf, error: error});
 });
 
 app.listen(port, () => {

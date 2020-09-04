@@ -1,3 +1,5 @@
+const puppeteer = require("puppeteer");
+
 exports.setCookies = async (page, cookies, url) => {
   if (cookies) {
     const
@@ -48,7 +50,7 @@ exports.getRenderEventPromise = (page, renderEventName, timeout) => {
   return eventPromise;
 };
 
-exports.getPuppeteerParams = (width, height, isLandscape) => {
+exports.getPuppeteerParams = (width, height) => {
   const
     debug = exports.isDebugMode();
 
@@ -58,8 +60,7 @@ exports.getPuppeteerParams = (width, height, isLandscape) => {
     ignoreHTTPSErrors: true,
     defaultViewport: {
       width: width || 1920,
-      height: height || 1080,
-      isLandscape: !!isLandscape
+      height: height || 1080
     }
   };
 };
@@ -67,3 +68,43 @@ exports.getPuppeteerParams = (width, height, isLandscape) => {
 exports.isDebugMode = () => {
   return process.env.DEBUG === "1";
 }
+
+const windowSetObject = async (page, name, value) => {
+  await page.evaluateOnNewDocument(`
+    Object.defineProperty(window, '${name}', {
+      get() {
+        return JSON.parse(${value});
+      }
+    })
+  `);
+};
+
+exports.openBrowserAndNavigate = async (useDimensionsFromParams, params) => {
+  const
+    {url, width, height, cookies, renderEventName, timeout} = params,
+    browser = await puppeteer.launch(exports.getPuppeteerParams(useDimensionsFromParams ? width : null, useDimensionsFromParams ? height : null)),
+    page = await browser.newPage();
+
+    // Expose all Parameters to the target page so the page can 
+    // Double stringify to stringify all type of quotes (' and ")
+    await windowSetObject(page, "FURY_PARAMS", JSON.stringify(JSON.stringify(params)));
+
+    page.setDefaultTimeout(timeout || 30 * 1000);
+
+    await exports.setCookies(page, cookies, url);
+
+    const
+      renderEventPromise = exports.getRenderEventPromise(page, renderEventName, timeout);
+
+    await page.goto(url, {
+      waitUntil: "networkidle0"
+    });
+
+    // Wait for the renderEvent...If it isn't defined, this will resolve immediately
+    await renderEventPromise;
+
+    return {
+      page: page,
+      browser: browser
+    }
+};
