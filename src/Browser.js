@@ -50,11 +50,9 @@ exports.pdf = async (params = {}) => {
       {page, browser} = await BrowserUtils.openBrowserAndNavigate(false, params);
 
     puppeteerBrowser = browser;
-
-    await page.emulateMediaType("screen");
     
     const pdfData = await page.pdf({
-      format: width && height ? undefined : format,
+      format: format,
       width: width,
       height: height,
       scale: 1,
