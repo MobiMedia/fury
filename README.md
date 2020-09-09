@@ -99,7 +99,11 @@ will be created unless the `timeout` expires before.
 After processing the target page, Fury will send a response in JSON Syntax:
 ```json
 {
-  "data": "", // The image or pdf encoded via base64 or null, if an error occured
-  "error": "" // If an error occured, this will contain the call stack of the error. Otherwise null.
+  "data": "",
+  "error": ""
 }
 ```
+
+`data`: The image or pdf encoded via base64 or null, if an error occured.
+
+`error`: If an error occured, this will contain the error message and call stack of the error. Otherwise null.
