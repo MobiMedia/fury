@@ -3,10 +3,10 @@
 Fury is a Node.js wrapper for the [Puppeteer](https://github.com/puppeteer/puppeteer) `screenshot` and `pdf` function.
 
 You can `POST` to `/screenshot` or `/pdf` to create either a screenshot or generate a pdf from a given URL.
-All parameters have to be in JSON-Syntax and have to be sent in the `POST` body.
+impAll parameters have to be sent in the `POST` body and they have to be in JSON syntax.
 
 Unless `renderEventName` isn't set, Fury will wait for the screenshot or pdf creation until no network request is
-pending for at least 500 milliseconds.
+made for at least 500 milliseconds.
 
 All given parameters will be forwarded to the target page via the `FURY_PARAMS` object in the `window` object of the browser.
 
@@ -19,7 +19,7 @@ All given parameters will be forwarded to the target page via the `FURY_PARAMS` 
 - `width`: Width in pixel of the resulting image. Default: 1920.
 - `height`: Height in pixel of the resulting image. Default: 1080.
 - `cookies`: Cookies which will be set before taking the screenshot. You can find a detailed explanation below.
-- `timeout`: Timeout in milliseconds for the screenshot. Default: 30 Seconds.
+- `timeout`: Timeout in milliseconds for the screenshot. Default: 30 seconds.
 - `renderEventName`: The RenderFunctionName. You can find a detailed explanation below.
 
 #### Example
@@ -38,7 +38,7 @@ curl --location --request POST 'http://localhost:3000/screenshot' \
 ```
 
 This request will set the cookie named `cookie` with `value1` and take a screenshot from `https://google.com` with dimensions of 800px x 800px.
-The `POST` will fail if the page doesn't respond after 60 Seconds.
+The `POST` will fail if the page doesn't respond after 60 seconds.
 
 ---
 
@@ -52,9 +52,9 @@ Creates a PDF of the given page by simulating a printout.
 - `height`: Height of the page. If `format` is defined, this will be ignored. This parameter will be forwarded to Puppeteer, so you can find a detailed explanation [here](https://github.com/puppeteer/puppeteer/blob/v5.2.1/docs/api.md#pagepdfoptions).
 - `format`: Format of the page. This parameter will be forwarded to Puppeteer, so you can find a detailed explanation [here](https://github.com/puppeteer/puppeteer/blob/v5.2.1/docs/api.md#pagepdfoptions).
 - `cookies`: Cookies which will be set before taking the screenshot. You can find a detailed explanation below.
-- `timeout`: Timeout in milliseconds for the screenshot. Default: 30 Seconds.
+- `timeout`: Timeout in milliseconds for the screenshot. Default: 30 seconds.
 - `renderEventName`: The RenderFunctionName. You can find a detailed explanation below.
-- `printBackground`: Include Background Media in the pdf ? This parameter will be forwarded to Puppeteer, so you can find a detailed explanation [here](https://github.com/puppeteer/puppeteer/blob/v5.2.1/docs/api.md#pagepdfoptions).
+- `printBackground`: Include background media in the pdf ? This parameter will be forwarded to Puppeteer, so you can find a detailed explanation [here](https://github.com/puppeteer/puppeteer/blob/v5.2.1/docs/api.md#pagepdfoptions).
 - `landscape`: Is the page landscape orientated ? Only works, if `format` is provided. This parameter will be forwarded to Puppeteer, so you can find a detailed explanation [here](https://github.com/puppeteer/puppeteer/blob/v5.2.1/docs/api.md#pagepdfoptions).
 - `margin`: Margin for the printout. This parameter will be forwarded to Puppeteer, so you can find a detailed explanation [here](https://github.com/puppeteer/puppeteer/blob/v5.2.1/docs/api.md#pagepdfoptions).
 
@@ -73,15 +73,15 @@ curl --location --request POST 'http://localhost:3000/pdf' \
 }
 ```
 
-This request will create a pdf by simulation a printout of `https://google.com`. The page size in the pdf is `A4` in landscape mode. Additionally, Fury will set the Cookie `cookie1` with the value `value`.
+This request will create a pdf by simulating a printout of `https://google.com`. The page size in the pdf is `A4` in landscape mode. Additionally, Fury will set the cookie `cookie1` with the value `value`.
 
 ---
 
 ## Defining Required Cookies
-Both Methods supports the `cookies` parameter to define some required cookies to process the page.
-This can be used for example to take a screenshot of a page which requires login cookie.
+Both methods supports the `cookies` parameter to define some required cookies to process the page.
+This can be used for example to take a screenshot of a page which requires a login cookie.
 
-The Syntax is pretty straight forward. You define the cookies in JSON Syntax, where the key represents the cookie name and the value is the value of the cookie.
+The syntax is pretty straight forward. You define the cookies in JSON syntax, where the key represents the cookie name and the value is the value of the cookie.
 Syntax: 
    ```json
   {
@@ -96,7 +96,7 @@ Fury will wait. The function name will be exposed to the global `window` object 
 will be created unless the `timeout` expires before.
 
 ## Response
-After processing the target page, Fury will send a response in JSON Syntax:
+After processing the target page, Fury will send a response in JSON syntax:
 ```json
 {
   "data": "",
