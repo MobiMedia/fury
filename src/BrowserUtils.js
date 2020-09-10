@@ -57,7 +57,7 @@ exports.getPuppeteerParams = (width, height) => {
   return {
     headless: !debug,
     devtools: debug,
-    args: ["--single-process"],
+    args: ["--single-process", "--no-sandbox", "--no-zygote"],
     ignoreHTTPSErrors: true,
     defaultViewport: {
       width: width || 1920,
