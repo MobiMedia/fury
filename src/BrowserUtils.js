@@ -86,7 +86,7 @@ exports.openBrowserAndNavigate = async (useDimensionsFromParams, params) => {
     browser = await puppeteer.launch(exports.getPuppeteerParams(useDimensionsFromParams ? width : null, useDimensionsFromParams ? height : null)),
     page = await browser.newPage();
 
-    // Expose all Parameters to the target page so the page can 
+    // Expose all Parameters to the target page so the page can read the values and prepare the page for rendering
     // Double stringify to stringify all type of quotes (' and ")
     await windowSetObject(page, "FURY_PARAMS", JSON.stringify(JSON.stringify(params)));
 
