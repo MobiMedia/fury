@@ -2,70 +2,46 @@
 const BrowserUtils = require("./BrowserUtils.js");
 const Utils = require("./Utils.js");
 
-exports.screenshot = async (params = {}) => {
+exports.screenshot = async (page, params) => {
   const
     {url} = params;
-  let
-    puppeteerBrowser;
 
   // We need to have an url parameter to proceed
   if (!url) {
     return;
   }
 
-  try {
-    const
-      {page, browser} = await BrowserUtils.openBrowserAndNavigate(true, params);
+  await BrowserUtils.navigate(true, page, params);
 
-    puppeteerBrowser = browser;
-   
-    const imageData = await page.screenshot({
-      quality: 100,
-      encoding: "base64",
-      type: "jpeg",
-    });
+  const imageData = await page.screenshot({
+    quality: 100,
+    encoding: "base64",
+    type: "jpeg",
+  });
 
-    return imageData;
-  } finally {
-    // Always close Browser to prevent memory leaks!
-    if (puppeteerBrowser) {
-      await puppeteerBrowser.close();
-    }
-  }
+  return imageData;
 };
 
-exports.pdf = async (params = {}) => {
+exports.pdf = async (page, params) => {
   const
     {url, format, width, height, printBackground, landscape, margin} = params;
-  let
-    puppeteerBrowser;
 
   // We need to have an url parameter to proceed
   if (!url) {
     return;
   }
 
-  try {
-    const
-      {page, browser} = await BrowserUtils.openBrowserAndNavigate(false, params);
+  await BrowserUtils.navigate(false, page, params);
 
-    puppeteerBrowser = browser;
-    
-    const pdfData = await page.pdf({
-      format: format,
-      width: width,
-      height: height,
-      scale: 1,
-      printBackground: !!printBackground,
-      landscape: !!landscape,
-      margin: margin
-    });
+  const pdfData = await page.pdf({
+    format: format,
+    width: width,
+    height: height,
+    scale: 1,
+    printBackground: !!printBackground,
+    landscape: !!landscape,
+    margin: margin
+  });
 
-    return Utils.base64ArrayBuffer(pdfData);
-  } finally {
-    // Always close Browser to prevent memory leaks!
-    if (puppeteerBrowser) {
-      await puppeteerBrowser.close();
-    }
-  }
+  return Utils.base64ArrayBuffer(pdfData);
 };

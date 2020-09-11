@@ -10,6 +10,12 @@ made for at least 500 milliseconds.
 
 All given parameters will be forwarded to the target page via the `FURY_PARAMS` object in the `window` object of the browser.
 
+## Environment Settings
+There are several environment variables which Fury is using:
+- `DEBUG`: If `DEBUG=1`, Fury will open the browser not in headless mode and open the development tools in each browser.
+- `CONCURRENT_LIMIT`: Defines the amount of max. concurrent rendering processes (concurrent browsers). Default is one concurrent rendering.
+- `TIMEOUT`: Defines the timeout for all requests in milliseconds
+
 ## Request
 ### Take a screenshot
 `/screenshot`
@@ -19,7 +25,6 @@ All given parameters will be forwarded to the target page via the `FURY_PARAMS` 
 - `width`: Width in pixel of the resulting image. Default: 1920.
 - `height`: Height in pixel of the resulting image. Default: 1080.
 - `cookies`: Cookies which will be set before taking the screenshot. You can find a detailed explanation below.
-- `timeout`: Timeout in milliseconds for the screenshot. Default: 30 seconds.
 - `renderEventName`: The RenderFunctionName. You can find a detailed explanation below.
 
 #### Example
@@ -52,7 +57,6 @@ Creates a PDF of the given page by simulating a printout.
 - `height`: Height of the page. If `format` is defined, this will be ignored. This parameter will be forwarded to Puppeteer, so you can find a detailed explanation [here](https://github.com/puppeteer/puppeteer/blob/v5.2.1/docs/api.md#pagepdfoptions).
 - `format`: Format of the page. This parameter will be forwarded to Puppeteer, so you can find a detailed explanation [here](https://github.com/puppeteer/puppeteer/blob/v5.2.1/docs/api.md#pagepdfoptions).
 - `cookies`: Cookies which will be set before taking the screenshot. You can find a detailed explanation below.
-- `timeout`: Timeout in milliseconds for the screenshot. Default: 30 seconds.
 - `renderEventName`: The RenderFunctionName. You can find a detailed explanation below.
 - `printBackground`: Include background media in the pdf ? This parameter will be forwarded to Puppeteer, so you can find a detailed explanation [here](https://github.com/puppeteer/puppeteer/blob/v5.2.1/docs/api.md#pagepdfoptions).
 - `landscape`: Is the page landscape orientated ? Only works, if `format` is provided. This parameter will be forwarded to Puppeteer, so you can find a detailed explanation [here](https://github.com/puppeteer/puppeteer/blob/v5.2.1/docs/api.md#pagepdfoptions).

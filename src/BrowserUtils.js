@@ -1,5 +1,3 @@
-const puppeteer = require("puppeteer");
-
 exports.setCookies = async (page, cookies, url) => {
   if (cookies) {
     const
@@ -24,7 +22,7 @@ exports.getRenderEventPromise = (page, renderEventName, timeout) => {
 
   if (renderEventName) {
     eventPromise = new Promise((resolve, reject) => {
-      timeout = timeout || 30 * 1000;
+      timeout = timeout || Utils.DEFAULT_TIMEOUT;
 
       let
         resolved = false;
@@ -32,7 +30,7 @@ exports.getRenderEventPromise = (page, renderEventName, timeout) => {
       setTimeout(() => {
         if (!resolved) {
           resolved = true;
-          reject(`Timeout of ${timeout / 1000}s exeeded by waiting for renderEventName`);
+          reject(`Timeout of ${timeout / 1000}s exeeded by waiting for renderEventName function call: "${renderEventName}()"`);
         }
       }, timeout);
 
@@ -50,19 +48,15 @@ exports.getRenderEventPromise = (page, renderEventName, timeout) => {
   return eventPromise;
 };
 
-exports.getPuppeteerParams = (width, height) => {
+exports.getPuppeteerParams = () => {
   const
     debug = exports.isDebugMode();
 
   return {
     headless: !debug,
     devtools: debug,
-    args: ["--single-process", "--no-sandbox", "--no-zygote"],
-    ignoreHTTPSErrors: true,
-    defaultViewport: {
-      width: width || 1920,
-      height: height || 1080
-    }
+    args: ["--no-sandbox", "--no-zygote"],
+    ignoreHTTPSErrors: true
   };
 };
 
@@ -80,32 +74,29 @@ const windowSetObject = async (page, name, value) => {
   `);
 };
 
-exports.openBrowserAndNavigate = async (useDimensionsFromParams, params) => {
+exports.navigate = async (useDimensionsFromParams, page, params) => {
   const
-    {url, width, height, cookies, renderEventName, timeout} = params,
-    browser = await puppeteer.launch(exports.getPuppeteerParams(useDimensionsFromParams ? width : null, useDimensionsFromParams ? height : null)),
-    page = await browser.newPage();
+    {url, width, height, cookies, renderEventName, timeout} = params;
 
-    // Expose all Parameters to the target page so the page can read the values and prepare the page for rendering
-    // Double stringify to stringify all type of quotes (' and ")
-    await windowSetObject(page, "FURY_PARAMS", JSON.stringify(JSON.stringify(params)));
+  if (useDimensionsFromParams) {
+    page.setViewport({width: width || 1920, height: height || 1080});
+  }
 
-    page.setDefaultTimeout(timeout || 30 * 1000);
+  // Expose all Parameters to the target page so the page can read the values and prepare the page for rendering
+  // Double stringify to stringify all type of quotes (' and ")
+  await windowSetObject(page, "FURY_PARAMS", JSON.stringify(JSON.stringify(params)));
 
-    await exports.setCookies(page, cookies, url);
+  page.setDefaultTimeout(timeout || 30 * 1000);
 
-    const
-      renderEventPromise = exports.getRenderEventPromise(page, renderEventName, timeout);
+  await setCookies(page, cookies, url);
 
-    await page.goto(url, {
-      waitUntil: "networkidle0"
-    });
+  const
+    renderEventPromise = exports.getRenderEventPromise(page, renderEventName, timeout);
 
-    // Wait for the renderEvent...If it isn't defined, this will resolve immediately
-    await renderEventPromise;
+  await page.goto(url, {
+    waitUntil: "networkidle0"
+  });
 
-    return {
-      page: page,
-      browser: browser
-    }
+  // Wait for the renderEvent...If it isn't defined, this will resolve immediately
+  await renderEventPromise;
 };

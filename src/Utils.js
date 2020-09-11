@@ -1,3 +1,5 @@
+exports.DEFAULT_TIMEOUT = 30 * 1000;
+
 // https://gist.github.com/jonleighton/958841#gistcomment-1953137
 exports.base64ArrayBuffer = (arrayBuffer) => {
   let base64 = '';
@@ -52,4 +54,8 @@ exports.base64ArrayBuffer = (arrayBuffer) => {
   }
 
   return base64;
+}
+
+exports.getError = (e) => {
+  return e.stack || e.toString();
 }
