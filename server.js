@@ -13,10 +13,18 @@ let
   concurrentLimit = process.env.CONCURRENT_LIMIT,
   timeout = process.env.TIMEOUT;
 
-try {
-  concurrentLimit = parseInt(concurrentLimit);
-} catch (ignored) {
+if (!concurrentLimit) {
   concurrentLimit = 1;
+} else {
+  try {
+    concurrentLimit = parseInt(concurrentLimit);
+
+    if (!Number.isInteger(concurrentLimit)) {
+      concurrentLimit = 1;
+    }
+  } catch (ignored) {
+    concurrentLimit = 1;
+  }
 }
 
 if (!timeout) {
@@ -24,6 +32,10 @@ if (!timeout) {
 } else {
   try {
     timeout = parseInt(timeout);
+
+    if (!Number.isInteger(timeout)) {
+      timeout = 1;
+    }
   } catch (ignored) {
     timeout = Utils.DEFAULT_TIMEOUT;
   }
