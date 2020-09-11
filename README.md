@@ -3,7 +3,7 @@
 Fury is a Node.js wrapper for the [Puppeteer](https://github.com/puppeteer/puppeteer) `screenshot` and `pdf` function.
 
 You can `POST` to `/screenshot` or `/pdf` to create either a screenshot or generate a pdf from a given URL.
-impAll parameters have to be sent in the `POST` body and they have to be in JSON syntax.
+All parameters have to be sent in the `POST` body and they have to be in JSON syntax.
 
 Unless `renderEventName` isn't set, Fury will wait for the screenshot or pdf creation until no network request is
 made for at least 500 milliseconds.
