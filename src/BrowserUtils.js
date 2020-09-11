@@ -1,4 +1,4 @@
-exports.setCookies = async (page, cookies, url) => {
+const setCookies = async (page, cookies, url) => {
   if (cookies) {
     const
       mappedCookies = Object.keys(cookies).map((key) => {

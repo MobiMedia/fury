@@ -13,8 +13,8 @@ All given parameters will be forwarded to the target page via the `FURY_PARAMS` 
 ## Environment Settings
 There are several environment variables which Fury is using:
 - `DEBUG`: If `DEBUG=1`, Fury will open the browser not in headless mode and open the development tools in each browser.
-- `CONCURRENT_LIMIT`: Defines the amount of max. concurrent rendering processes (concurrent browsers). Default is one concurrent rendering.
-- `TIMEOUT`: Defines the timeout for all requests in milliseconds
+- `CONCURRENT_LIMIT`: Defines the amount of max. concurrent rendering processes. Default is one concurrent rendering.
+- `TIMEOUT`: Defines the timeout for all requests in milliseconds. Default: 30000 (30 seconds)
 
 ## Request
 ### Take a screenshot

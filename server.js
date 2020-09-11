@@ -1,12 +1,11 @@
 const Browser = require("./src/Browser.js");
-const express = require("express");
-const { Cluster } = require("puppeteer-cluster");
 const BrowserUtils = require("./src/BrowserUtils.js");
 const Utils = require("./src/Utils.js");
+const express = require("express");
+const { Cluster } = require("puppeteer-cluster");
 
 const app = express();
 const port = process.env.PORT || 3000;
-const Browser = require("./src/Browser.js");
 
 app.use(express.json({limit: "100mb"}));
 
@@ -31,6 +30,23 @@ if (!timeout) {
 }
 
 let cluster;
+
+Cluster.launch({
+  concurrency: Cluster.CONCURRENCY_CONTEXT,
+  maxConcurrency: concurrentLimit,
+  puppeteerOptions: BrowserUtils.getPuppeteerParams(),
+  timeout: timeout
+}).then((_cluster) => {
+  cluster = _cluster;
+
+  app.listen(port, () => {
+    console.log(`Fury Server started at Port ${port}`);
+  });
+});
+
+process.on("exit", async () => {
+  await cluster.close();
+});
 
 app.post("/screenshot", async (req, res) => {
   const
@@ -58,21 +74,4 @@ app.post("/pdf", async (req, res) => {
   } catch (e) {
     res.send({data: null, error: Utils.getError(e)});
   }
-});
-
-Cluster.launch({
-  concurrency: Cluster.CONCURRENCY_CONTEXT,
-  maxConcurrency: concurrentLimit,
-  puppeteerOptions: BrowserUtils.getPuppeteerParams(),
-  timeout: timeout
-}).then((_cluster) => {
-  cluster = _cluster;
-
-  app.listen(port, () => {
-    console.log(`Fury Server started at Port ${port}`);
-  });
-})
-
-process.on("exit", async () => {
-  await cluster.close();
 });
