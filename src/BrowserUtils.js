@@ -78,6 +78,8 @@ exports.navigate = async (useDimensionsFromParams, page, params) => {
   const
     {url, width, height, cookies, renderEventName, timeout} = params;
 
+  console.log(`Processing Request for "${url}"`);
+
   if (useDimensionsFromParams) {
     page.setViewport({width: width || 1920, height: height || 1080});
   }
