@@ -6,7 +6,8 @@ RUN apt-get update && \
      libexpat1 libfontconfig1 libgcc1 libgconf-2-4 libgdk-pixbuf2.0-0 libglib2.0-0 libgtk-3-0 libnspr4 \ 
      libpango-1.0-0 libpangocairo-1.0-0 libstdc++6 libx11-6 libx11-xcb1 libxcb1 \ 
      libxcursor1 libxdamage1 libxext6 libxfixes3 libxi6 libxrandr2 libxrender1 libxss1 libxtst6 \ 
-     libnss3 
+     libnss3 \
+     fonts-indic fonts-noto fonts-noto-cjk
 
 RUN useradd -u 8877 fury
 RUN mkdir -p /home/fury
