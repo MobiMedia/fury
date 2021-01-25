@@ -88,12 +88,12 @@ exports.navigate = async (useDimensionsFromParams, page, params) => {
   // Double stringify to stringify all type of quotes (' and ")
   await windowSetObject(page, "FURY_PARAMS", JSON.stringify(JSON.stringify(params)));
 
-  page.setDefaultTimeout(timeout || 30 * 1000);
+  page.setDefaultTimeout(timeout || Utils.DEFAULT_TIMEOUT);
 
   await setCookies(page, cookies, url);
 
   const
-    renderEventPromise = exports.getRenderEventPromise(page, renderEventName, timeout);
+    renderEventPromise = exports.getRenderEventPromise(page, renderEventName, timeout || Utils.DEFAULT_TIMEOUT);
 
   await page.goto(url, {
     waitUntil: "networkidle0"

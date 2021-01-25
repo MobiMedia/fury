@@ -6,12 +6,13 @@ const { Cluster } = require("puppeteer-cluster");
 
 const app = express();
 const port = process.env.PORT || 3000;
+let timeout = Utils.DEFAULT_TIMEOUT;
 
 app.use(express.json({limit: "100mb"}));
 
 let
   concurrentLimit = process.env.CONCURRENT_LIMIT,
-  timeout = process.env.TIMEOUT;
+  _timeout = process.env.TIMEOUT;
 
 if (!concurrentLimit) {
   concurrentLimit = 1;
@@ -27,19 +28,19 @@ if (!concurrentLimit) {
   }
 }
 
-if (!timeout) {
-  timeout = Utils.DEFAULT_TIMEOUT;
-} else {
+if (_timeout) {
   try {
-    timeout = parseInt(timeout);
+    _timeout = parseInt(_timeout);
 
-    if (!Number.isInteger(timeout)) {
-      timeout = 1;
+    if (!Number.isInteger(_timeout)) {
+      _timeout = Utils.DEFAULT_TIMEOUT;
     }
   } catch (ignored) {
-    timeout = Utils.DEFAULT_TIMEOUT;
+    _timeout = Utils.DEFAULT_TIMEOUT;
   }
 }
+
+timeout = _timeout;
 
 let cluster;
 
@@ -66,7 +67,7 @@ app.post("/screenshot", async (req, res) => {
 
   try {
     await cluster.execute(async ({ page }) => {
-      const image = await Browser.screenshot(page, params);
+      const image = await Browser.screenshot(page, {...params, ...{timeout: timeout}});
       res.send({data: image, error: null});
     });
   } catch (e) {
@@ -80,7 +81,7 @@ app.post("/pdf", async (req, res) => {
 
   try {
     await cluster.execute(async ({ page }) => {
-      const pdf = await Browser.pdf(page, params);
+      const pdf = await Browser.pdf(page, {...params, ...{timeout: timeout}});
       res.send({data: pdf, error: null});
     });
   } catch (e) {
