@@ -7,12 +7,12 @@ const { Cluster } = require("puppeteer-cluster");
 const app = express();
 const port = process.env.PORT || 3000;
 let timeout = Utils.DEFAULT_TIMEOUT;
+let envTimeout = process.env.TIMEOUT
 
 app.use(express.json({limit: "100mb"}));
 
 let
-  concurrentLimit = process.env.CONCURRENT_LIMIT,
-  _timeout = process.env.TIMEOUT;
+  concurrentLimit = process.env.CONCURRENT_LIMIT;
 
 if (!concurrentLimit) {
   concurrentLimit = 1;
@@ -28,19 +28,17 @@ if (!concurrentLimit) {
   }
 }
 
-if (_timeout) {
+if (envTimeout) {
   try {
-    _timeout = parseInt(_timeout);
+    timeout = parseInt(envTimeout);
 
-    if (!Number.isInteger(_timeout)) {
-      _timeout = Utils.DEFAULT_TIMEOUT;
+    if (!Number.isInteger(timeout)) {
+      timeout = Utils.DEFAULT_TIMEOUT;
     }
   } catch (ignored) {
-    _timeout = Utils.DEFAULT_TIMEOUT;
+    timeout = Utils.DEFAULT_TIMEOUT;
   }
 }
-
-timeout = _timeout;
 
 let cluster;
 
