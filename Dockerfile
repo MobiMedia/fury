@@ -4,7 +4,7 @@ ENV DEBIAN_FRONTEND noninteractive
 
 RUN echo "deb http://httpredir.debian.org/debian stretch main contrib" > /etc/apt/sources.list \
      && echo "deb http://security.debian.org/ stretch/updates main contrib" >> /etc/apt/sources.list \
-     && echo "ttf-mscorefonts-installer msttcorefonts/accepted-mscorefonts-eula select true" | debconf-set-selections \apt-get update \
+     && echo "ttf-mscorefonts-installer msttcorefonts/accepted-mscorefonts-eula select true" | debconf-set-selections \
      && apt-get update \
      && apt-get install -yq --no-install-recommends \ 
           ttf-mscorefonts-installer fontconfig fonts-noto ttf-dejavu ttf-liberation \
