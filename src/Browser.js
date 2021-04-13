@@ -1,6 +1,5 @@
 
 const BrowserUtils = require("./BrowserUtils.js");
-const Utils = require("./Utils.js");
 
 exports.screenshot = async (page, params) => {
   const
@@ -43,5 +42,5 @@ exports.pdf = async (page, params) => {
     margin: margin
   });
 
-  return Utils.base64ArrayBuffer(pdfData);
+  return pdfData.toString("base64");
 };
