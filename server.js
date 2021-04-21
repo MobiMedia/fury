@@ -1,8 +1,9 @@
+const { Cluster } = require("puppeteer-cluster");
 const Browser = require("./src/Browser.js");
 const BrowserUtils = require("./src/BrowserUtils.js");
-const Utils = require("./src/Utils.js");
 const express = require("express");
-const { Cluster } = require("puppeteer-cluster");
+const msgpack = require("@msgpack/msgpack");
+const Utils = require("./src/Utils.js");
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -10,6 +11,15 @@ let timeout = Utils.DEFAULT_TIMEOUT;
 let envTimeout = process.env.TIMEOUT
 
 app.use(express.json({limit: "100mb"}));
+
+app.use((req, res, next) => {
+  // Return msgpack if the HTTP accept header contains the string "msgpack", else we fall back to json
+  req.respondWithMsgPack = (req.get('accept') || "").includes("msgpack");
+
+  res.type(req.respondWithMsgPack ? "application/msgpack" : "application/json");
+
+  next();
+});
 
 let
   concurrentLimit = process.env.CONCURRENT_LIMIT;
@@ -51,7 +61,7 @@ Cluster.launch({
   cluster = _cluster;
 
   app.listen(port, () => {
-    console.log(`Fury Server started at Port ${port}`);
+    console.log(`Fury server started at port ${port}`);
   });
 });
 
@@ -65,8 +75,14 @@ app.post("/screenshot", async (req, res) => {
 
   try {
     await cluster.execute(async ({ page }) => {
-      const image = await Browser.screenshot(page, {...params, ...{timeout: timeout}});
-      res.send({data: image, error: null});
+      const image = await Browser.screenshot(page, {...params, ...{timeout: timeout}}, req.respondWithMsgPack);
+      let result = {data: image, error: null};
+
+      if (req.respondWithMsgPack) {
+        result = Buffer.from(msgpack.encode(result));
+      }
+
+      res.send(result);
     });
   } catch (e) {
     res.send({data: null, error: Utils.getError(e)});
@@ -79,10 +95,22 @@ app.post("/pdf", async (req, res) => {
 
   try {
     await cluster.execute(async ({ page }) => {
-      const pdf = await Browser.pdf(page, {...params, ...{timeout: timeout}});
-      res.send({data: pdf, error: null});
+      const pdf = await Browser.pdf(page, {...params, ...{timeout: timeout}}, req.respondWithMsgPack);
+      let result = {data: pdf, error: null};
+
+      if (req.respondWithMsgPack) {
+        result = Buffer.from(msgpack.encode(result));
+      }
+
+      res.send(result);
     });
   } catch (e) {
-    res.send({data: null, error: Utils.getError(e)});
+    let result = {data: null, error: Utils.getError(e)};
+
+    if (req.respondWithMsgPack) {
+        result = Buffer.from(msgpack.encode(result));
+    }
+
+    res.send(result);
   }
 });

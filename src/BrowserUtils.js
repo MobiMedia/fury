@@ -50,14 +50,19 @@ exports.getRenderEventPromise = (page, renderEventName, timeout) => {
 
 exports.getPuppeteerParams = () => {
   const
-    debug = exports.isDebugMode();
+    debug = exports.isDebugMode(),
+    result = {
+      headless: !debug,
+      devtools: debug,
+      args: ["--no-sandbox", "--no-zygote"],
+      ignoreHTTPSErrors: true
+    };
 
-  return {
-    headless: !debug,
-    devtools: debug,
-    args: ["--no-sandbox", "--no-zygote"],
-    ignoreHTTPSErrors: true
-  };
+  if (process.env.PUPPETEER_EXECUTABLE_PATH) {
+    result.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
+  }
+
+  return result;
 };
 
 exports.isDebugMode = () => {
@@ -78,7 +83,7 @@ exports.navigate = async (useDimensionsFromParams, page, params) => {
   const
     {url, width, height, cookies, renderEventName, timeout} = params;
 
-  console.log(`Processing Request for "${url}"`);
+  console.log(`${new Date().toISOString()} Processing request for "${url}"`);
 
   if (useDimensionsFromParams) {
     page.setViewport({width: width || 1920, height: height || 1080});
