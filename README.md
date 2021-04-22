@@ -111,3 +111,6 @@ After processing the target page, Fury will send a response in JSON syntax:
 `data`: The image or pdf encoded via base64 or null, if an error occured.
 
 `error`: If an error occured, this will contain the error message and call stack of the error. Otherwise null.
+
+### MessagePack
+If the HTTP request has the string `msgpack` in the HTTP `Accept:` header, Fury will return the same response as a [MessagePack](https://msgpack.org/) map. Because MessagePack allows binary data, this is more efficient because the data doesn't have to be encoded to base64 and it allows to return larger files.
