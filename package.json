@@ -9,8 +9,9 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@msgpack/msgpack": "^2.6.0",
     "express": "^4.17.1",
-    "puppeteer": "^5.4.1",
+    "puppeteer": "^9.0.0",
     "puppeteer-cluster": "^0.22.0"
   }
 }
