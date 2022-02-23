@@ -99,6 +99,12 @@ If the target page have to do some work before the page is ready for the screens
 Fury will wait. The function name will be exposed to the global `window` object of the browser. After calling the function from the target page, the screenshot or the pdf
 will be created unless the `timeout` expires before.
 
+## Page errors
+A page can provide an error message which will be considered after page navigation.
+To provide an error message, just create a `<div class="furyError">` on the page and fill it with the error message if you don't want to print the page.
+
+If this div exists and has a content, the content of the div will be returned as `error`.
+
 ## Response
 After processing the target page, Fury will send a response in JSON syntax:
 ```json

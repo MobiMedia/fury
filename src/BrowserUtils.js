@@ -106,4 +106,10 @@ exports.navigate = async (useDimensionsFromParams, page, params) => {
 
   // Wait for the renderEvent...If it isn't defined, this will resolve immediately
   await renderEventPromise;
+  
+  const errorObjectText = await page.$$eval(".furyError", (divs) => divs.map((div) => div.innerText));
+
+  if (errorObjectText.length && errorObjectText[0].trim()) {
+    throw "An error occured on the page: " + errorObjectText[0].trim();
+  }
 };
