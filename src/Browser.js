@@ -39,7 +39,8 @@ exports.pdf = async (page, params, rawData) => {
     scale: 1,
     printBackground: !!printBackground,
     landscape: !!landscape,
-    margin: margin
+    margin: margin,
+    timeout: 0
   });
 
   return rawData ? pdfData : pdfData.toString("base64");
