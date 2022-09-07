@@ -69,6 +69,10 @@ process.on("exit", async () => {
   await cluster.close();
 });
 
+app.get("/", async (req, res) => {
+  res.send({ok: true});
+});
+
 app.post("/screenshot", async (req, res) => {
   const
     params = req.body;
