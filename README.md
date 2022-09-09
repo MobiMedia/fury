@@ -1,5 +1,7 @@
 # Fury Rendering Server
 
+Test
+
 Fury is a Node.js wrapper for the [Puppeteer](https://github.com/puppeteer/puppeteer) `screenshot` and `pdf` function.
 
 You can `POST` to `/screenshot` or `/pdf` to create either a screenshot or generate a pdf from a given URL.
