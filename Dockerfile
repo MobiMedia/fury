@@ -1,4 +1,4 @@
-FROM amd64/node:14
+FROM amd64/node:16
 
 ENV DEBIAN_FRONTEND noninteractive
 
