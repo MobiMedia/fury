@@ -18,4 +18,4 @@ jobs:
         uses: docker/build-push-action@v3.1.1
         with:
           push: true
-          tags: mobimedia/fury:latest,mobimedia/fury:$(date +%s)
+          tags: mobimedia/fury:latest,mobimedia/fury:v${{ github.run_number }}
