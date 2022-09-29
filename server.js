@@ -10,7 +10,6 @@ const port = process.env.PORT || 3000;
 let timeout = Utils.DEFAULT_TIMEOUT;
 let envTimeout = process.env.TIMEOUT
 
-//test
 app.use(express.json({limit: "100mb"}));
 
 app.use((req, res, next) => {
