@@ -24,10 +24,10 @@ RUN chown fury /home/fury
 
 USER fury
 WORKDIR /home/fury
-COPY package*.json ./
-COPY .fonts.conf ./
+COPY --chown=fury package*.json ./
+COPY --chown=fury .fonts.conf ./
 
-RUN npm install
+RUN npm ci
 
 COPY . .
 
