@@ -3,7 +3,6 @@ FROM amd64/node:20
 ENV DEBIAN_FRONTEND noninteractive
 
 RUN echo "deb http://deb.debian.org/debian bookworm contrib" > /etc/apt/sources.list \
-     # && echo "deb http://security.debian.org/ bookworm/updates main contrib" >> /etc/apt/sources.list \
      && echo "ttf-mscorefonts-installer msttcorefonts/accepted-mscorefonts-eula select true" | debconf-set-selections \
      && apt-get update \
      && apt-get install -yq --no-install-recommends \ 
