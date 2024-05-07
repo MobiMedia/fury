@@ -1,13 +1,13 @@
-FROM amd64/node:16
+FROM amd64/node:20
 
 ENV DEBIAN_FRONTEND noninteractive
 
-RUN echo "deb http://httpredir.debian.org/debian stretch main contrib" > /etc/apt/sources.list \
-     && echo "deb http://security.debian.org/ stretch/updates main contrib" >> /etc/apt/sources.list \
+RUN echo "deb http://deb.debian.org/debian bookworm contrib" > /etc/apt/sources.list \
+     # && echo "deb http://security.debian.org/ bookworm/updates main contrib" >> /etc/apt/sources.list \
      && echo "ttf-mscorefonts-installer msttcorefonts/accepted-mscorefonts-eula select true" | debconf-set-selections \
      && apt-get update \
      && apt-get install -yq --no-install-recommends \ 
-          ttf-mscorefonts-installer fontconfig fonts-noto ttf-dejavu ttf-liberation \
+          ttf-mscorefonts-installer fontconfig fonts-noto fonts-dejavu fonts-liberation \
           libasound2 libatk1.0-0 libc6 libcairo2 libcups2 libdbus-1-3 \ 
           libexpat1 libfontconfig1 libgcc1 libgconf-2-4 libgdk-pixbuf2.0-0 libglib2.0-0 libgtk-3-0 libnspr4 \ 
           libpango-1.0-0 libpangocairo-1.0-0 libstdc++6 libx11-6 libx11-xcb1 libxcb1 \ 
