@@ -58,6 +58,7 @@ Creates a PDF of the given page by simulating a printout.
 - `format`: Format of the page. This parameter will be forwarded to Puppeteer, so you can find a detailed explanation [here](https://github.com/puppeteer/puppeteer/blob/v5.2.1/docs/api.md#pagepdfoptions).
 - `cookies`: Cookies which will be set before taking the screenshot. You can find a detailed explanation below.
 - `renderEventName`: The RenderFunctionName. You can find a detailed explanation below.
+- `renderEventNameTimeout`: The timeout in milliseconds for waiting to call `renderEventName`. If not specified, the default Timeout of the Fury Application will be used. Must be smaller than the global Request Timeout
 - `printBackground`: Include background media in the pdf ? This parameter will be forwarded to Puppeteer, so you can find a detailed explanation [here](https://github.com/puppeteer/puppeteer/blob/v5.2.1/docs/api.md#pagepdfoptions).
 - `landscape`: Is the page landscape orientated ? Only works, if `format` is provided. This parameter will be forwarded to Puppeteer, so you can find a detailed explanation [here](https://github.com/puppeteer/puppeteer/blob/v5.2.1/docs/api.md#pagepdfoptions).
 - `margin`: Margin for the printout. This parameter will be forwarded to Puppeteer, so you can find a detailed explanation [here](https://github.com/puppeteer/puppeteer/blob/v5.2.1/docs/api.md#pagepdfoptions).
