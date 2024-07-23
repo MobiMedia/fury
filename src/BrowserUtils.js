@@ -113,16 +113,15 @@ exports.navigate = async (useDimensionsFromParams, page, params) => {
 
   await setCookies(page, cookies, url);
 
-  let renderEventTimeoutDefined = false;
-  let renderEventTimeout = timeout || Utils.DEFAULT_TIMEOUT;
+  const defaultTimeout = timeout || Utils.DEFAULT_TIMEOUT;
+  let renderEventTimeout = defaultTimeout;
 
   if (renderEventNameTimeout && renderEventNameTimeout < renderEventTimeout) {
     renderEventTimeout = renderEventNameTimeout;
-    renderEventTimeoutDefined = true;
   }
 
   const
-    renderEventPromise = exports.getRenderEventPromise(page, renderEventName, renderEventTimeout, renderEventTimeoutDefined);
+    renderEventPromise = exports.getRenderEventPromise(page, renderEventName, renderEventTimeout, renderEventTimeout < defaultTimeout);
 
   await page.goto(url, {
     waitUntil: "networkidle0"
