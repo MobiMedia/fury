@@ -13,7 +13,7 @@ const setCookies = async (page, cookies, url) => {
   }
 };
 
-exports.getRenderEventPromise = (page, renderEventName, timeout) => {
+exports.getRenderEventPromise = (page, renderEventName, timeout, continueAfterTimeout) => {
   // If we have to wait with the rendering for a specific Function call, we have
   // to expose the given EventName to the page und resolve the Promise after calling
   // this function
@@ -21,7 +21,7 @@ exports.getRenderEventPromise = (page, renderEventName, timeout) => {
   let eventPromise;
 
   if (renderEventName) {
-    eventPromise = new Promise((resolve, reject) => {
+    eventPromise = new Promise((resolve) => {
       timeout = timeout || Utils.DEFAULT_TIMEOUT;
 
       let
@@ -30,7 +30,8 @@ exports.getRenderEventPromise = (page, renderEventName, timeout) => {
       setTimeout(() => {
         if (!resolved) {
           resolved = true;
-          reject(`Timeout of ${timeout / 1000}s exeeded by waiting for renderEventName function call: "${renderEventName}()"`);
+          console.error(`Timeout of ${timeout / 1000}s exeeded by waiting for renderEventName function call: "${renderEventName}()"`, continueAfterTimeout ? "Page will be processed anyway..." : "Aborting...");
+          resolve();
         }
       }, timeout);
 
@@ -81,7 +82,7 @@ const windowSetObject = async (page, name, value) => {
 
 exports.navigate = async (useDimensionsFromParams, page, params) => {
   const
-    {url, width, height, cookies, renderEventName, timeout} = params;
+    {url, width, height, cookies, renderEventName, timeout, renderEventNameTimeout} = params;
 
   console.log(`${new Date().toISOString()} Processing request for "${url}"`);
 
@@ -95,10 +96,33 @@ exports.navigate = async (useDimensionsFromParams, page, params) => {
 
   page.setDefaultTimeout(timeout || Utils.DEFAULT_TIMEOUT);
 
+  page.on("console", (msg) => {
+    const {url, lineNumber, columnNumber} = msg.location();
+    let locationMessage = url;
+
+    if (lineNumber) {
+      locationMessage += `:${lineNumber}`;
+    }
+
+    if (columnNumber) {
+      locationMessage += `:${columnNumber}`;
+    }
+
+    console.log(`[PAGE][${msg.type()}]`, `${msg.text()} (${locationMessage})`);
+  });
+
   await setCookies(page, cookies, url);
 
+  let renderEventTimeoutDefined = false;
+  let renderEventTimeout = timeout || Utils.DEFAULT_TIMEOUT;
+
+  if (renderEventNameTimeout && renderEventNameTimeout < renderEventTimeout) {
+    renderEventTimeout = renderEventNameTimeout;
+    renderEventTimeoutDefined = true;
+  }
+
   const
-    renderEventPromise = exports.getRenderEventPromise(page, renderEventName, timeout || Utils.DEFAULT_TIMEOUT);
+    renderEventPromise = exports.getRenderEventPromise(page, renderEventName, renderEventTimeout, renderEventTimeoutDefined);
 
   await page.goto(url, {
     waitUntil: "networkidle0"
