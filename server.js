@@ -78,6 +78,7 @@ app.post("/screenshot", async (req, res) => {
     params = req.body;
 
   try {
+    Utils.log("Received /screenshot request");
     await cluster.execute(async ({ page }) => {
       const image = await Browser.screenshot(page, {...params, ...{timeout: timeout}}, req.respondWithMsgPack);
       let result = {data: image, error: null};
@@ -90,6 +91,8 @@ app.post("/screenshot", async (req, res) => {
     });
   } catch (e) {
     res.send({data: null, error: Utils.getError(e)});
+  } finally {
+    Utils.log("Finished /screenshot request");
   }
 });
 
@@ -98,6 +101,7 @@ app.post("/pdf", async (req, res) => {
     params = req.body;
 
   try {
+    Utils.log("Received /pdf request");
     await cluster.execute(async ({ page }) => {
       const pdf = await Browser.pdf(page, {...params, ...{timeout: timeout}}, req.respondWithMsgPack);
       let result = {data: pdf, error: null};
@@ -116,5 +120,7 @@ app.post("/pdf", async (req, res) => {
     }
 
     res.send(result);
+  } finally {
+    Utils.log("Finished /pdf request");
   }
 });

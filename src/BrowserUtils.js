@@ -1,3 +1,5 @@
+const Utils = require("./Utils.js");
+
 const setCookies = async (page, cookies, url) => {
   if (cookies) {
     const
@@ -84,7 +86,7 @@ exports.navigate = async (useDimensionsFromParams, page, params) => {
   const
     {url, width, height, cookies, renderEventName, timeout, renderEventNameTimeout} = params;
 
-  console.log(`${new Date().toISOString()} Processing request for "${url}"`);
+  Utils.log(`Processing request for "${url}"`);
 
   if (useDimensionsFromParams) {
     page.setViewport({width: width || 1920, height: height || 1080});
@@ -108,7 +110,7 @@ exports.navigate = async (useDimensionsFromParams, page, params) => {
       locationMessage += `:${columnNumber}`;
     }
 
-    console.log(`[PAGE][${msg.type()}]`, `${msg.text()} (${locationMessage})`);
+    Utils.log(`[PAGE][${msg.type()}] ${msg.text()} (${locationMessage})`);
   });
 
   await setCookies(page, cookies, url);
