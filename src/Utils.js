@@ -11,3 +11,7 @@ exports.createUniqueFileName = (extension = "") => {
   const timestamp = Date.now();
   return `${uniqueId}-${timestamp}${extension ? `.${extension}` : ""}`;
 }
+
+exports.log = (message) => {
+  console.log(`${new Date().toISOString()} ${message}`);
+}
