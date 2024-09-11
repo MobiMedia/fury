@@ -8,7 +8,7 @@ const Utils = require("./src/Utils.js");
 
 const app = express();
 const port = process.env.PORT || 3000;
-const saveDir = process.env.FURY_SAFE_DIR || false;
+const saveDir = process.env.FURY_SAVE_DIR || false;
 let timeout = Utils.DEFAULT_TIMEOUT;
 let envTimeout = process.env.TIMEOUT
 
