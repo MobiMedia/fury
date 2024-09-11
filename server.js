@@ -3,10 +3,12 @@ const Browser = require("./src/Browser.js");
 const BrowserUtils = require("./src/BrowserUtils.js");
 const express = require("express");
 const msgpack = require("@msgpack/msgpack");
+const path = require("path");
 const Utils = require("./src/Utils.js");
 
 const app = express();
 const port = process.env.PORT || 3000;
+const saveDir = process.env.FURY_SAFE_DIR || false;
 let timeout = Utils.DEFAULT_TIMEOUT;
 let envTimeout = process.env.TIMEOUT
 
@@ -73,48 +75,44 @@ app.get("/", async (req, res) => {
   res.send({ok: true});
 });
 
-app.post("/screenshot", async (req, res) => {
-  const
-    params = req.body;
+const createHandler = (functionName, extension) => {
+  return async (req, res) => {
+    const
+      params = req.body;
 
-  try {
-    await cluster.execute(async ({ page }) => {
-      const image = await Browser.screenshot(page, {...params, ...{timeout: timeout}}, req.respondWithMsgPack);
-      let result = {data: image, error: null};
+    try {
+      await cluster.execute(async ({ page }) => {
+        let result = {};
+
+        if (saveDir) {
+          result.file = Utils.createUniqueFileName(extension);
+        }
+
+        const data = await Browser[functionName](page, {...params, ...{ timeout }}, req.respondWithMsgPack || saveDir, {
+          path: result.file ? path.join(saveDir, result.file) : undefined
+        });
+
+        if (!saveDir) {
+          result.data = data;
+        }
+
+        if (req.respondWithMsgPack) {
+          result = Buffer.from(msgpack.encode(result));
+        }
+
+        res.send(result);
+      });
+    } catch (e) {
+      let result = {data: null, error: Utils.getError(e)};
 
       if (req.respondWithMsgPack) {
-        result = Buffer.from(msgpack.encode(result));
+          result = Buffer.from(msgpack.encode(result));
       }
 
       res.send(result);
-    });
-  } catch (e) {
-    res.send({data: null, error: Utils.getError(e)});
-  }
-});
-
-app.post("/pdf", async (req, res) => {
-  const
-    params = req.body;
-
-  try {
-    await cluster.execute(async ({ page }) => {
-      const pdf = await Browser.pdf(page, {...params, ...{timeout: timeout}}, req.respondWithMsgPack);
-      let result = {data: pdf, error: null};
-
-      if (req.respondWithMsgPack) {
-        result = Buffer.from(msgpack.encode(result));
-      }
-
-      res.send(result);
-    });
-  } catch (e) {
-    let result = {data: null, error: Utils.getError(e)};
-
-    if (req.respondWithMsgPack) {
-        result = Buffer.from(msgpack.encode(result));
     }
+  };
+}
 
-    res.send(result);
-  }
-});
+app.post("/screenshot", createHandler("screenshot", "jpeg"));
+app.post("/pdf", createHandler("pdf", "pdf"));
