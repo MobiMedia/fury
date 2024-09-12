@@ -1,7 +1,7 @@
 
 const BrowserUtils = require("./BrowserUtils.js");
 
-exports.screenshot = async (page, params, rawData) => {
+exports.screenshot = async (page, params, rawData, screenshotOptions = {}) => {
   const
     {url} = params;
 
@@ -16,12 +16,13 @@ exports.screenshot = async (page, params, rawData) => {
     quality: 100,
     encoding: rawData ? "binary" : "base64",
     type: "jpeg",
+    ...screenshotOptions
   });
 
   return imageData;
 };
 
-exports.pdf = async (page, params, rawData) => {
+exports.pdf = async (page, params, rawData, pdfOptions = {}) => {
   const
     {url, format, width, height, printBackground, landscape, margin} = params;
 
@@ -40,7 +41,8 @@ exports.pdf = async (page, params, rawData) => {
     printBackground: !!printBackground,
     landscape: !!landscape,
     margin: margin,
-    timeout: 0
+    timeout: 0,
+    ...pdfOptions
   });
 
   return rawData ? pdfData : pdfData.toString("base64");
