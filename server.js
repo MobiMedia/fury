@@ -71,7 +71,7 @@ process.on("exit", async () => {
   await cluster.close();
 });
 
-const gracefulShutdown = async () => {
+const gracefulShutdown = () => {
   process.exit(0);
 }
 
