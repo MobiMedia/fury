@@ -71,6 +71,13 @@ process.on("exit", async () => {
   await cluster.close();
 });
 
+const gracefulShutdown = () => {
+  process.exit(0);
+}
+
+process.on("SIGTERM", gracefulShutdown);
+process.on("SIGINT", gracefulShutdown);
+
 app.get("/", async (req, res) => {
   res.send({ok: true});
 });
@@ -116,10 +123,3 @@ const createHandler = (functionName, extension) => {
 
 app.post("/screenshot", createHandler("screenshot", "jpeg"));
 app.post("/pdf", createHandler("pdf", "pdf"));
-
-if (process.env.FURY_STOP_HANDLER == "1") {
-  app.get("/stop", (req, res) => {
-    res.send("bye");
-    process.exit(0);
-  });
-}
