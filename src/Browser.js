@@ -47,3 +47,26 @@ exports.pdf = async (page, params, rawData, pdfOptions = {}) => {
 
   return rawData ? pdfData : pdfData.toString("base64");
 };
+
+exports.file = async (page, params, rawData, pdfOptions = {}) => {
+  const
+    {url} = params;
+
+  // We need to have an url parameter to proceed
+  if (!url) {
+    return;
+  }
+
+  await BrowserUtils.navigate(false, page, params);
+
+  const pageObject = window.mobi?.app?.page;
+  if (!pageObject) {
+    return;
+  }
+  const exportData = pageObject.blobExport(params);
+  if (!exportData) {
+    return;
+  }
+
+  return rawData ? exportData : exportData.toString("base64");
+};

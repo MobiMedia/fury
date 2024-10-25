@@ -123,3 +123,4 @@ const createHandler = (functionName, extension) => {
 
 app.post("/screenshot", createHandler("screenshot", "jpeg"));
 app.post("/pdf", createHandler("pdf", "pdf"));
+app.post("/file", createHandler("file", "bin"));
