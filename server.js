@@ -88,6 +88,7 @@ const createHandler = (functionName, extension) => {
       params = req.body;
 
     try {
+      Utils.log(`Received ${functionName} request`);
       await cluster.execute(async ({ page }) => {
         let result = {};
 
@@ -117,6 +118,8 @@ const createHandler = (functionName, extension) => {
       }
 
       res.send(result);
+    } finally {
+      Utils.log(`Finished ${functionName} request`);
     }
   };
 }
