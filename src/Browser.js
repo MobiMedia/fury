@@ -59,14 +59,19 @@ exports.file = async (page, params, rawData, pdfOptions = {}) => {
 
   await BrowserUtils.navigate(false, page, params);
 
-  const pageObject = window.mobi?.app?.page;
-  if (!pageObject) {
-    return;
-  }
-  const exportData = pageObject.blobExport(params);
-  if (!exportData) {
-    return;
-  }
+  const exportData = await page.evaluate(async (params) => {
+      const pageObject = window.mobi?.app?.page;
+      if (!pageObject?.blobExport) {
+        throw new Error('Page not loaded!');
+        return;
+      }
 
-  return rawData ? exportData : exportData.toString("base64");
+      const result = await pageObject.blobExport(params);
+      const text = await result?.text();
+      return {type: result.type, text: text};
+    }, params);
+
+  const blob = new Blob([exportData.text], {type: exportData.type});
+  const bytes = await blob.bytes();
+  return rawData ? bytes : bytes.toString("base64");
 };
