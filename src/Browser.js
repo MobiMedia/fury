@@ -67,10 +67,15 @@ exports.file = async (page, params, rawData, pdfOptions = {}) => {
       }
 
       const result = await pageObject.blobExport(params);
-      const text = await result?.text();
+      if (!result) {
+        return;
+      }
+      const text = await result.text();
       return {type: result.type, text: text};
     }, params);
-
+  if (!exportData) {
+    return;
+  }
   const blob = new Blob([exportData.text], {type: exportData.type});
   const bytes = await blob.bytes();
   return rawData ? bytes : bytes.toString("base64");
