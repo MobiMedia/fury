@@ -46,8 +46,6 @@ exports.pdf = async (page, params, rawData, pdfOptions = {}) => {
     ...pdfOptions
   });
 
-  console.log(pdfData);
-
   return rawData ? pdfData : pdfData.toString("base64");
 };
 
