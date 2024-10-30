@@ -1,5 +1,6 @@
 
 const BrowserUtils = require("./BrowserUtils.js");
+const fs = require('fs');
 
 exports.screenshot = async (page, params, rawData, screenshotOptions = {}) => {
   const
@@ -45,10 +46,12 @@ exports.pdf = async (page, params, rawData, pdfOptions = {}) => {
     ...pdfOptions
   });
 
+  console.log(pdfData);
+
   return rawData ? pdfData : pdfData.toString("base64");
 };
 
-exports.file = async (page, params, rawData, pdfOptions = {}) => {
+exports.file = async (page, params, rawData, fileOptions = {}) => {
   const
     {url} = params;
 
@@ -79,10 +82,10 @@ exports.file = async (page, params, rawData, pdfOptions = {}) => {
           reader.readAsDataURL(blob);
         });
       }
-      const text = await blobToBase64URI(result);
-      return {type: result.type, text: text};
+      const data = await blobToBase64URI(result);
+      return {type: result.type, size: result.size, data: data};
     }, params);
-  if (!exportData) {
+  if (!exportData || !exportData.data) {
     return;
   }
   // Decode base64 back to blob
@@ -97,7 +100,13 @@ exports.file = async (page, params, rawData, pdfOptions = {}) => {
     return new Blob([ab], {type: mimeString});
   }
 
-  const decoded = decode(exportData.text);
+  const decoded = decode(exportData.data);
+
+  if (fileOptions.path) {
+    const buffer = await decoded.arrayBuffer();
+    fs.createWriteStream(fileOptions.path).write(Buffer.from(buffer));
+  }
+
   const bytes = await decoded.bytes();
   return rawData ? bytes : bytes.toString("base64");
 };
