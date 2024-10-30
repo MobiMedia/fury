@@ -70,13 +70,34 @@ exports.file = async (page, params, rawData, pdfOptions = {}) => {
       if (!result) {
         return;
       }
-      const text = await result.text();
+
+      // Convert blob to base64 so puppeteer can forward it correctly to node.js
+      const blobToBase64URI = (blob) => {
+        return new Promise((resolve) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result);
+          reader.readAsDataURL(blob);
+        });
+      }
+      const text = await blobToBase64URI(result);
       return {type: result.type, text: text};
     }, params);
   if (!exportData) {
     return;
   }
-  const blob = new Blob([exportData.text], {type: exportData.type});
-  const bytes = await blob.bytes();
+  // Decode base64 back to blob
+  const decode = (dataURI) => {
+    const byteString = atob(dataURI.split(',')[1]);
+    const mimeString = dataURI.split(',')[0].split(':')[1].split(';')[0];
+    const ab = new ArrayBuffer(byteString.length);
+    const ia = new Uint8Array(ab);
+    for (var i = 0; i < byteString.length; i++) {
+      ia[i] = byteString.charCodeAt(i);
+    }
+    return new Blob([ab], {type: mimeString});
+  }
+
+  const decoded = decode(exportData.text);
+  const bytes = await decoded.bytes();
   return rawData ? bytes : bytes.toString("base64");
 };
