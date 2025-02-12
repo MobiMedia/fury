@@ -58,7 +58,7 @@ exports.getPuppeteerParams = () => {
       headless: !debug,
       devtools: debug,
       args: ["--no-sandbox", "--no-zygote"],
-      protocolTimeout: 60 * 5 * 1000,
+      protocolTimeout: process.env.protocolTimeout || 60 * 5 * 1000,
       ignoreHTTPSErrors: true
     };
 
