@@ -52,7 +52,7 @@ exports.getRenderEventPromise = (page, renderEventName, timeout, continueAfterTi
 };
 
 exports.getPuppeteerParams = () => {
-  const {protocolTimeout} = process.env;
+  const {PROTOCOL_TIMEOUT} = process.env;
   let envProtocolTimeout = protocolTimeout ? parseInt(protocolTimeout, 10) : 0;
   
   if (!envProtocolTimeout || isNaN(envProtocolTimeout)) {
@@ -65,7 +65,7 @@ exports.getPuppeteerParams = () => {
       headless: !debug,
       devtools: debug,
       args: ["--no-sandbox", "--no-zygote"],
-      protocolTimeout: envProtocolTimeout,
+      protocolTimeout: process.env.PROTOCOLTIMEOUT || 60 * 5 * 1000,
       ignoreHTTPSErrors: true
     };
 
