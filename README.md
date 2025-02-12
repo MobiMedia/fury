@@ -15,7 +15,7 @@ There are several environment variables which Fury is using:
 - `DEBUG`: If `DEBUG=1`, Fury will open the browser not in headless mode and open the development tools in each browser.
 - `CONCURRENT_LIMIT`: Defines the amount of max. concurrent rendering processes. Default is one concurrent rendering.
 - `TIMEOUT`: Defines the timeout for all requests in milliseconds. Default: 30000 (30 seconds)
-- `PROTOCOLTIMEOUT`: Defines the protocolTimeout for puppeteer in milliseconds. Default: 300000 (5 minutes)
+- `PROTOCOL_TIMEOUT`: Defines the protocolTimeout for puppeteer in milliseconds. Default: 300000 (5 minutes)
 
 ## Request
 ### Take a screenshot
