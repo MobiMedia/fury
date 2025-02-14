@@ -53,7 +53,7 @@ exports.getRenderEventPromise = (page, renderEventName, timeout, continueAfterTi
 
 exports.getPuppeteerParams = () => {
   const {PROTOCOL_TIMEOUT} = process.env;
-  let envProtocolTimeout = PROTOCOL_TIMEOUT ? parseInt(protocolTimeout, 10) : 0;
+  let envProtocolTimeout = PROTOCOL_TIMEOUT ? parseInt(PROTOCOL_TIMEOUT, 10) : 0;
   
   if (!envProtocolTimeout || isNaN(envProtocolTimeout)) {
     envProtocolTimeout = 60 * 5 * 1000;
