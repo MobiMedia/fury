@@ -1,4 +1,5 @@
 
+const { text } = require("express");
 const BrowserUtils = require("./BrowserUtils.js");
 const fs = require('fs');
 
@@ -107,4 +108,42 @@ exports.file = async (page, params, rawData, fileOptions = {}) => {
 
   const bytes = await decoded.bytes();
   return rawData ? bytes : bytes.toString("base64");
+};
+
+exports.json = async (page, params, rawData, jsonOptions = {}) => {
+  const
+    {url} = params;
+
+  // We need to have an url parameter to proceed
+  if (!url) {
+    return;
+  }
+
+  if (!jsonOptions.path) {
+    throw new Error('The JSON export only works if a FURY_SAVE_DIR is set!');
+  }
+
+  await BrowserUtils.navigate(false, page, params);
+
+  const jsonData = await page.evaluate(async (params) => {
+      const pageObject = window.mobi?.app?.page;
+
+      if (!pageObject?.jsonExport) {
+        throw new Error('Page not loaded!');
+      }
+
+      const result = await pageObject.jsonExport(params);
+
+      console.log(`data:`, result);
+
+      return result;
+    }, params);
+
+  if (!jsonData) {
+    return;
+  }
+
+  fs.createWriteStream(jsonOptions.path).write(JSON.stringify(jsonData));
+
+  return "";
 };
