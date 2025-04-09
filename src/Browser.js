@@ -102,10 +102,16 @@ exports.file = async (page, params, rawData, fileOptions = {}) => {
 
   if (fileOptions.path) {
     const buffer = await decoded.arrayBuffer();
-    const fd = fs.openSync(fileOptions.path, 'w');
-    fs.writeSync(fd, Buffer.from(buffer));
-    fs.fsyncSync(fd);
-    fs.closeSync(fd);
+    let fileHandle;
+    try {
+      fileHandle = await fs.promises.open(fileOptions.path, 'w');
+      await fileHandle.write(Buffer.from(buffer));
+      await fileHandle.sync();
+    } finally {
+      if (fileHandle) {
+        await fileHandle.close();
+      }
+    }
   }
 
   const bytes = await decoded.bytes();
