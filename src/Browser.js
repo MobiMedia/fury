@@ -4,7 +4,7 @@ const fs = require('fs');
 
 exports.screenshot = async (page, params, rawData, screenshotOptions = {}) => {
   const
-    {url} = params;
+    {url, quality} = params;
 
   // We need to have an url parameter to proceed
   if (!url) {
@@ -14,7 +14,7 @@ exports.screenshot = async (page, params, rawData, screenshotOptions = {}) => {
   await BrowserUtils.navigate(true, page, params);
 
   const imageData = await page.screenshot({
-    quality: 100,
+    quality: quality ?? 90,
     encoding: rawData ? "binary" : "base64",
     type: "jpeg",
     ...screenshotOptions
