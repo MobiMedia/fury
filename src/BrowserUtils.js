@@ -139,6 +139,16 @@ exports.navigate = async (useDimensionsFromParams, page, params) => {
 
   // Wait for the renderEvent...If it isn't defined, this will resolve immediately
   await renderEventPromise;
+
+  // Optional additional wait after render event
+  const additionalWait = process.env.FURY_ADDITIONAL_WAIT_ON_NAVIGATE;
+  if (additionalWait) {
+    const waitTime = parseInt(additionalWait, 10);
+    if (!isNaN(waitTime) && waitTime > 0) {
+      Utils.log(`Waiting additional ${waitTime}ms after render event`);
+      await new Promise(resolve => setTimeout(resolve, waitTime));
+    }
+  }
   
   const errorObjectText = await page.$$eval(".furyError", (divs) => divs.map((div) => div.innerText));
 
