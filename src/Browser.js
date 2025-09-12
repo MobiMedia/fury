@@ -34,6 +34,33 @@ exports.pdf = async (page, params, rawData, pdfOptions = {}) => {
 
   await BrowserUtils.navigate(false, page, params);
 
+  // Apply print-color-adjust: exact to all child frames (iframes)
+  // to ensure background colors and images are printed in iframes
+  if (printBackground && process.env.FURY_PRINT_BACKGROUND_IFRAME_FIX) {
+    const applyPrintColorAdjust = async (frame) => {
+      try {
+        await frame.evaluate(() => {
+          const style = document.createElement('style');
+          style.textContent = `
+            *, *::before, *::after {
+              print-color-adjust: exact !important;
+              -webkit-print-color-adjust: exact !important;
+            }
+          `;
+          document.head.appendChild(style);
+        });
+      } catch (error) {
+        console.warn(`Failed to apply print-color-adjust to frame: ${error.message}`);
+      }
+    };
+
+    // Apply to all child frames (iframes)
+    const childFrames = page.mainFrame().childFrames();
+    for (const frame of childFrames) {
+      await applyPrintColorAdjust(frame);
+    }
+  }
+
   const pdfData = await page.pdf({
     format: format,
     width: width,
