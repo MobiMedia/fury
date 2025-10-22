@@ -66,7 +66,7 @@ exports.pdf = async (page, params, rawData, pdfOptions = {}) => {
   }
 
   let scale = 1;
-  if (unit === "px") {
+  if (unit === "px" && pageWidth) {
     // Fury renders at 96DPI
     let widthInt = -1;
     try {
