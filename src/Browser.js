@@ -25,7 +25,7 @@ exports.screenshot = async (page, params, rawData, screenshotOptions = {}) => {
 
 exports.pdf = async (page, params, rawData, pdfOptions = {}) => {
   const
-    {url, format, width, height, printBackground, landscape, margin, injectIFrameCSS} = params;
+    {url, format, width, height, printBackground, landscape, margin, injectIFrameCSS, pageWidth, unit} = params;
 
   // We need to have an url parameter to proceed
   if (!url) {
@@ -65,14 +65,25 @@ exports.pdf = async (page, params, rawData, pdfOptions = {}) => {
     }
   }
 
-  const pdfData = await page.pdf({
-    format: format,
-    width: width,
-    height: height,
-    scale: 1,
+  let scale = 1;
+  if (unit === "px") {
+    // Fury renders at 96DPI
+    let widthInt = -1;
+    try {
+      widthInt = parseInt(width, 10);
+    } catch (e) {
+      console.error(`Unable to convert width "${width}" to a number. Skip scale calculation, printing with default 1`);
+    }
+
+    if (!isNaN(widthInt) && widthInt > 0) {
+      const widthInPx = Math.round((widthInt * 96) / 25.4); // Width in px at 96dpi with page width (in millimeter)
+      scale = Math.min(2, Math.max(0.1, widthInPx / pageWidth)); // required scale to scale the page to the pdf page. Needs to be between 0.1 and 2
+    }
+  }
+
+  const pdfData = await page.pdf({format, width, height, scale, margin,
     printBackground: !!printBackground,
     landscape: !!landscape,
-    margin: margin,
     timeout: 0,
     ...pdfOptions
   });
