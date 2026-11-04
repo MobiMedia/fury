@@ -164,8 +164,25 @@ describe("/inspect with files (FURY_SAVE_DIR) and an exempt fixture host", () =>
 
     // Computed colors; the transparent header resolves to the white wrapper
     assert.deepEqual(metadata.colors.page, {background: "#f7f5f0", text: "#1b1d1e"});
-    assert.deepEqual(metadata.colors.header, {background: "#ffffff", text: "#1b1d1e"});
-    assert.deepEqual(metadata.colors.footer, {background: "#1f4e5f", text: "#ffffff"});
+    // Regions: semantic <header>/<main>/<footer>, each with its own colors
+    const {header, content, footer} = metadata.colors;
+    assert.equal(header.source, "semantic");
+    assert.equal(header.background, "#ffffff");
+    assert.equal(header.text, "#1b1d1e");
+    assert.deepEqual(header.backgrounds, [{color: "#ffffff", share: 1}]);
+    assert.deepEqual(header.links, ["#1b1d1e"]);
+    assert.equal(content.source, "semantic");
+    assert.equal(content.background, "#f7f5f0");
+    assert.equal(content.backgrounds[0].color, "#f7f5f0");
+    assert.equal(content.text, "#1b1d1e");
+    assert.equal(content.headings, "#1b1d1e");
+    assert.deepEqual(content.links, ["#2a6f97", "#ffffff"]);
+    assert.deepEqual(content.buttons[0], {background: "#1f4e5f", text: "#ffffff", label: "Zum Sale"});
+    assert.equal(footer.source, "semantic");
+    assert.equal(footer.background, "#1f4e5f");
+    assert.equal(footer.text, "#ffffff");
+    assert.deepEqual(footer.links, ["#ffffff"]);
+    assert.ok(header.bounds.y < content.bounds.y && content.bounds.y < footer.bounds.y);
     assert.deepEqual(metadata.colors.buttons[0], {background: "#1f4e5f", text: "#ffffff", label: "Zum Sale"});
     assert.ok(metadata.colors.buttons.some((button) => button.label === "Anmelden"));
     assert.equal(metadata.colors.links[0], "#2a6f97");
@@ -261,6 +278,53 @@ describe("/inspect with files (FURY_SAVE_DIR) and an exempt fixture host", () =>
     const partner = images.findIndex((image) => image.alt === "Payment partner logo");
     assert.ok(partner > images.indexOf(masks[0]));
     assert.deepEqual(images[partner].hints.filter((hint) => hint !== "above-fold"), ["logo"]);
+  });
+
+  test("colors per region without semantic elements (found by name), backgrounds by area", async () => {
+    const {metadata} = await inspect({url: `${base}/regions.html`});
+    const {header, content, footer} = metadata.colors;
+
+    assert.equal(header.source, "name");
+    assert.deepEqual(header.bounds, {x: 0, y: 0, width: 1440, height: 100});
+    assert.equal(header.background, "#000000");
+    assert.deepEqual(header.backgrounds, [{color: "#000000", share: 0.7}, {color: "#d40000", share: 0.3}]);
+    assert.equal(header.text, "#ffffff");
+    assert.deepEqual(header.links, ["#ffffff", "#ffd700"]);
+
+    // Content: the body without header and footer
+    assert.equal(content.source, "body");
+    assert.equal(content.background, "#ffffff");
+    assert.equal(content.backgrounds[0].color, "#ffffff");
+    assert.equal(content.text, "#222222");
+    assert.equal(content.headings, "#0a3d62");
+    assert.deepEqual(content.buttons, [{background: "#0a3d62", text: "#ffffff", label: "Jetzt kaufen"}]);
+
+    assert.equal(footer.source, "name");
+    assert.equal(footer.background, "#333333");
+    assert.deepEqual(footer.backgrounds, [{color: "#333333", share: 1}]);
+    assert.equal(footer.text, "#eeeeee");
+    assert.equal(footer.headings, null);
+  });
+
+  test("full height: a page scrolling inside an element is expanded for the screenshot", async () => {
+    const {metadata, screenshot} = await inspect({url: `${base}/inner-scroll.html`});
+    assert.equal(metadata.screenshot.scrollContainer, true);
+    assert.equal(metadata.screenshot.pageHeight, 3000);
+    assert.equal(metadata.screenshot.height, 3000);
+    assert.equal(metadata.screenshot.truncated, false);
+
+    const pixel = await jpegPixel(screenshot, 100, 2750);
+    assert.equal(pixel.height, 3000);
+    assert.ok(pixel.b > 200 && pixel.r < 50 && pixel.g < 50, JSON.stringify(pixel));
+  });
+
+  test("full height: an endless page is cut at maxHeight", async () => {
+    const {metadata, screenshot} = await inspect({url: `${base}/endless.html`, maxHeight: 3000});
+    assert.equal(metadata.screenshot.height, 3000);
+    assert.equal(metadata.screenshot.truncated, true);
+    assert.ok(metadata.screenshot.pageHeight > 3000);
+    assert.equal(metadata.screenshot.scrollContainer, false);
+    assert.equal((await jpegPixel(screenshot, 0, 0)).height, 3000);
   });
 
   test("a client side rendered page shows up in text and screenshot", async () => {

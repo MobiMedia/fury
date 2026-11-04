@@ -13,7 +13,7 @@ test("parseParams: defaults", () => {
   assert.equal(params.width, 1440);
   assert.equal(params.height, 900);
   assert.equal(params.fullPage, true);
-  assert.equal(params.maxHeight, 4000);
+  assert.equal(params.maxHeight, 10000);
   assert.equal(params.quality, 70);
   assert.equal(params.scroll, true);
   assert.equal(params.timeout, 20000);

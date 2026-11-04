@@ -114,8 +114,44 @@ exports.extractPageData = async (options) => {
   };
 
   const main = document.querySelector("main, [role=main]");
-  const header = firstVisible("header, [role=banner]");
-  const footer = firstVisible("footer, [role=contentinfo]", true);
+  // --- Page regions: header, content, footer ----------------------------------------------------------------------
+  // Semantic elements first (a <header>/<footer> inside article/aside/main belongs to that, not to the page), then
+  // elements named like one ("site-header", "#footer") that span the page width.
+  const viewportWidth = document.documentElement.clientWidth || window.innerWidth;
+  const outermost = (elements) => elements.filter((el) => !elements.some((other) => other !== el && other.contains(el)));
+  const NESTED = "article, aside, main, [role=main]";
+  const byName = (word, accept) => outermost(Array.from(document.querySelectorAll(`[id*=${word} i], [class*=${word} i]`))
+    .slice(0, 500)
+    .filter((el) => isVisible(el) && accept(el.getBoundingClientRect())));
+
+  const headerRegion = (() => {
+    const semantic = outermost(Array.from(document.querySelectorAll("header, [role=banner]"))
+      .filter((el) => isVisible(el) && !(el.parentElement && el.parentElement.closest(`${NESTED}, footer, [role=contentinfo]`))));
+    if (semantic.length) {
+      return {element: semantic[0], source: "semantic"};
+    }
+    const named = byName("header", (rect) => rect.width >= viewportWidth * 0.8 && rect.height >= 20 && rect.height <= 600 &&
+      rect.top + window.scrollY < 200);
+    return named.length ? {element: named[0], source: "name"} : null;
+  })();
+
+  const footerRegion = (() => {
+    const semantic = outermost(Array.from(document.querySelectorAll("footer, [role=contentinfo]"))
+      .filter((el) => isVisible(el) && !(el.parentElement && el.parentElement.closest(`${NESTED}, header, [role=banner]`))));
+    if (semantic.length) {
+      return {element: semantic[semantic.length - 1], source: "semantic"};
+    }
+    const named = byName("footer", (rect) => rect.width >= viewportWidth * 0.8 && rect.height >= 20);
+    return named.length ? {element: named[named.length - 1], source: "name"} : null;
+  })();
+
+  const header = headerRegion ? headerRegion.element : null;
+  const footer = footerRegion ? footerRegion.element : null;
+
+  // Content: <main>, otherwise the body without header and footer
+  const contentRegion = main && isVisible(main)
+    ? {element: main, source: "semantic", exclude: [header, footer].filter((el) => el && main.contains(el))}
+    : {element: document.body || document.documentElement, source: "body", exclude: [header, footer].filter(Boolean)};
 
   const labelOf = (el) => truncate(el.innerText || el.value || el.getAttribute("aria-label") || el.getAttribute("title") || "", 60);
 
@@ -154,6 +190,127 @@ exports.extractPageData = async (options) => {
         linkColorCounts.set(color, (linkColorCounts.get(color) || 0) + 1);
       }
     });
+
+  // Colors of one region: what is painted (backgrounds by area), how text looks (by characters), headings, links and
+  // buttons. Elements of `exclude` (header/footer inside the content element) do not count.
+  const topShares = (counts, limit) => {
+    const total = Array.from(counts.values()).reduce((sum, value) => sum + value, 0);
+    return Array.from(counts.entries())
+      .filter(([, value]) => total > 0 && value / total >= 0.01)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, limit)
+      .map(([color, value]) => ({color, share: Math.round((value / total) * 100) / 100}));
+  };
+  const addCount = (counts, color, amount) => {
+    if (color && amount > 0) {
+      counts.set(color, (counts.get(color) || 0) + amount);
+    }
+  };
+
+  const analyzeRegion = (region) => {
+    if (!region) {
+      return null;
+    }
+    const root = region.element;
+    const exclude = region.exclude || [];
+    const inRegion = (el) => !exclude.some((excluded) => excluded.contains(el));
+    const visibleCache = new Map();
+    const visible = (el) => {
+      if (!visibleCache.has(el)) {
+        visibleCache.set(el, isVisible(el));
+      }
+      return visibleCache.get(el);
+    };
+    const elements = Array.from(root.querySelectorAll("*")).slice(0, MAX_SCAN).filter((el) => inRegion(el) && visible(el));
+
+    // Backgrounds: every element with an opaque background paints its box, minus what its descendants with an own
+    // background paint over it; the region element paints the rest in its effective background. Background images
+    // and gradients are not counted (their area goes to the color below).
+    const bounds = root.getBoundingClientRect();
+    const clippedArea = (rect) =>
+      Math.max(0, Math.min(rect.right, bounds.right) - Math.max(rect.left, bounds.left)) *
+      Math.max(0, Math.min(rect.bottom, bounds.bottom) - Math.max(rect.top, bounds.top));
+    const painted = new Map([[root, {color: effectiveBackground(root), area: clippedArea(bounds)}]]);
+    const paintedBelow = (el) => {
+      for (let current = el.parentElement; current; current = current.parentElement) {
+        if (painted.has(current)) {
+          return painted.get(current);
+        }
+      }
+      return painted.get(root);
+    };
+    elements.forEach((el) => {
+      const color = toHex(getComputedStyle(el).backgroundColor);
+      const area = color ? clippedArea(el.getBoundingClientRect()) : 0;
+      if (area > 0) {
+        paintedBelow(el).area -= area;
+        painted.set(el, {color, area});
+      }
+    });
+    exclude.forEach((el) => {
+      if (el !== root && root.contains(el)) {
+        paintedBelow(el).area -= clippedArea(el.getBoundingClientRect());
+      }
+    });
+    const backgroundCounts = new Map();
+    painted.forEach(({color, area}) => addCount(backgroundCounts, color, area));
+
+    // Text: color of every visible text, weighted by its characters
+    const textCounts = new Map();
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    for (let node = walker.nextNode(), visited = 0; node && visited < 5000; node = walker.nextNode(), visited++) {
+      const parent = node.parentElement;
+      const length = node.textContent.trim().length;
+      if (length && parent && !/^(script|style|noscript|template)$/i.test(parent.tagName) && inRegion(parent) && visible(parent)) {
+        addCount(textCounts, toHex(getComputedStyle(parent).color), length);
+      }
+    }
+
+    const headingCounts = new Map();
+    const linkCounts = new Map();
+    elements.forEach((el) => {
+      const tag = el.tagName.toLowerCase();
+      if (/^h[1-6]$/.test(tag)) {
+        addCount(headingCounts, toHex(getComputedStyle(el).color), collapse(el.innerText).length);
+      } else if (tag === "a" && el.hasAttribute("href") && collapse(el.innerText)) {
+        addCount(linkCounts, toHex(getComputedStyle(el).color), 1);
+      }
+    });
+
+    const regionButtons = [];
+    const seen = new Set();
+    buttonCandidates
+      .filter((el) => root.contains(el) && inRegion(el) && visible(el))
+      .map((el) => ({el, area: el.getBoundingClientRect().width * el.getBoundingClientRect().height}))
+      .sort((a, b) => b.area - a.area)
+      .forEach(({el}) => {
+        const entry = {background: effectiveBackground(el), text: toHex(getComputedStyle(el).color), label: labelOf(el)};
+        const key = `${entry.background}|${entry.text}|${entry.label}`;
+        if (regionButtons.length < 5 && !seen.has(key)) {
+          seen.add(key);
+          regionButtons.push(entry);
+        }
+      });
+
+    const texts = topShares(textCounts, 3);
+    const headings = topShares(headingCounts, 1);
+    return {
+      source: region.source,
+      bounds: {
+        x: Math.round(bounds.left + window.scrollX),
+        y: Math.round(bounds.top + window.scrollY),
+        width: Math.round(bounds.width),
+        height: Math.round(bounds.height)
+      },
+      background: effectiveBackground(root),
+      backgrounds: topShares(backgroundCounts, 5),
+      text: texts.length ? texts[0].color : toHex(getComputedStyle(root).color),
+      texts,
+      headings: headings.length ? headings[0].color : null,
+      links: topShares(linkCounts, 3).map((entry) => entry.color),
+      buttons: regionButtons
+    };
+  };
 
   const PRIORITY_VARIABLE = /color|colour|primary|secondary|accent|brand|theme|bg|background|text|link|button/i;
   const rootStyle = getComputedStyle(document.documentElement);
@@ -195,10 +352,11 @@ exports.extractPageData = async (options) => {
 
   const colors = {
     page: colorPair(document.body || document.documentElement),
+    header: analyzeRegion(headerRegion),
+    content: analyzeRegion(contentRegion),
+    footer: analyzeRegion(footerRegion),
     links: Array.from(linkColorCounts.entries()).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([color]) => color),
     buttons,
-    header: colorPair(header),
-    footer: colorPair(footer),
     variables: Object.fromEntries(variableEntries.slice(0, 30))
   };
 
@@ -1004,4 +1162,39 @@ exports.preloadImages = async ({urls, timeout}) => {
     image.src = url;
   })));
   return true;
+};
+
+// Pages whose content scrolls inside an element (html/body at 100% height plus an inner overflow:auto container) are
+// only as high as the viewport for a screenshot. If the document itself does not scroll, the largest vertically
+// scrolling element and its ancestors are unclipped (height auto, overflow visible), so the document gets the full
+// height. Not undone: the screenshot and the positions in the metadata then refer to the same layout. Runs in the
+// isolated world.
+exports.expandScrollContainer = ({viewportHeight}) => {
+  const documentHeight = () => Math.max(document.documentElement.scrollHeight, document.body ? document.body.scrollHeight : 0);
+  if (documentHeight() > viewportHeight + 1) {
+    return {expanded: false, height: documentHeight()};
+  }
+
+  let container = null;
+  for (const el of Array.from(document.querySelectorAll("body *")).slice(0, 5000)) {
+    if (el.scrollHeight <= el.clientHeight + 1 || el.clientHeight < viewportHeight * 0.5) {
+      continue;
+    }
+    if (!/(auto|scroll|overlay)/.test(getComputedStyle(el).overflowY)) {
+      continue;
+    }
+    if (!container || el.scrollHeight > container.scrollHeight) {
+      container = el;
+    }
+  }
+  if (!container) {
+    return {expanded: false, height: documentHeight()};
+  }
+
+  for (let el = container; el; el = el.parentElement) {
+    el.style.setProperty("height", "auto", "important");
+    el.style.setProperty("max-height", "none", "important");
+    el.style.setProperty("overflow", "visible", "important");
+  }
+  return {expanded: true, height: documentHeight()};
 };

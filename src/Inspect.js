@@ -96,7 +96,7 @@ exports.parseParams = (body, globalTimeout) => {
     width: toInt(params.width, 1440, 320, 3840),
     height: toInt(params.height, 900, 320, 2160),
     fullPage: toBool(params.fullPage, true),
-    maxHeight: toInt(params.maxHeight, 4000, 320, 16000),
+    maxHeight: toInt(params.maxHeight, 10000, 320, 16000),
     quality: toInt(params.quality, 70, 1, 100),
     scroll: toBool(params.scroll, true),
     timeout: toInt(params.timeout, 20000, 1000, Math.max(1000, globalTimeout - POST_NAVIGATION_RESERVE)),
@@ -495,7 +495,17 @@ const inspectPage = async ({context, proxy, checker, params, userAgent, userAgen
     throw navigationError(new Error(`navigation to ${lastMainUrl} failed`));
   }
 
-  // 2. Scroll down in viewport steps (lazy images, infinite lists), at most maxHeight px, then back to the top
+  // 2. Full height for pages that scroll inside an element instead of the document
+  let scrollContainer = false;
+  if (params.fullPage) {
+    const expanded = await evaluateIsolated(identitySession, InspectExtract.expandScrollContainer, {viewportHeight: params.height}).catch((e) => {
+      Utils.log(`Inspect: expanding the scroll container failed: ${e.message}`);
+      return null;
+    });
+    scrollContainer = Boolean(expanded?.expanded);
+  }
+
+  // Scroll down in viewport steps (lazy images, infinite lists), at most maxHeight px, then back to the top
   if (params.scroll) {
     await evaluateWithRetry(page, async ({maxHeight, stepWait, budget}) => {
       const start = Date.now();
@@ -517,11 +527,11 @@ const inspectPage = async ({context, proxy, checker, params, userAgent, userAgen
 
   // 3. Screenshot (JPEG), a full-page screenshot is clipped at maxHeight
   let clipHeight = params.height;
+  const pageHeight = await evaluateWithRetry(page, () => Math.max(
+    document.documentElement.scrollHeight,
+    document.body ? document.body.scrollHeight : 0
+  )).catch(() => params.height);
   if (params.fullPage) {
-    const pageHeight = await evaluateWithRetry(page, () => Math.max(
-      document.documentElement.scrollHeight,
-      document.body ? document.body.scrollHeight : 0
-    )).catch(() => params.height);
     clipHeight = Math.min(Math.max(pageHeight, params.height), params.maxHeight);
   }
 
@@ -596,6 +606,14 @@ const inspectPage = async ({context, proxy, checker, params, userAgent, userAgen
     fonts: null,
     ...extracted,
     botProtection,
+    // The page height (CSS px) and whether the screenshot shows all of it
+    screenshot: {
+      width: params.width,
+      height: clipHeight,
+      pageHeight: Math.max(pageHeight, params.height),
+      truncated: Math.max(pageHeight, params.height) > clipHeight,
+      scrollContainer
+    },
     blocked,
     timings: {navigationMs, totalMs: Date.now() - startedAt}
   };

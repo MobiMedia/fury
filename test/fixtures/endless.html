@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <title>Endless</title>
+  <style>body { margin: 0; } .item { height: 400px; border-bottom: 1px solid #cccccc; }</style>
+</head>
+<body>
+  <div id="list"></div>
+  <script>
+    // Infinite scrolling: more items whenever the end comes close
+    const list = document.getElementById("list");
+    const more = () => {
+      for (let i = 0; i < 5; i++) {
+        const item = document.createElement("div");
+        item.className = "item";
+        item.textContent = `Item ${list.children.length + 1}`;
+        list.appendChild(item);
+      }
+    };
+    more();
+    window.addEventListener("scroll", () => {
+      if (window.scrollY + window.innerHeight > document.documentElement.scrollHeight - 800) {
+        more();
+      }
+    });
+  </script>
+</body>
+</html>

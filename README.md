@@ -152,8 +152,8 @@ Unlike the other endpoints, `/inspect` does not support `cookies` or `renderEven
 |---|---|---|
 | `url` (**Required**) | | Absolute `http(s)` URL, without credentials |
 | `width`, `height` | 1440, 900 | Viewport (320-3840 x 320-2160), `deviceScaleFactor` 1 |
-| `fullPage` | `true` | Screenshot of the whole page, capped at `maxHeight` |
-| `maxHeight` | 4000 | Cap of a full-page screenshot in px (clipped, not scaled; max. 16000) |
+| `fullPage` | `true` | Screenshot of the whole page height, capped at `maxHeight`. Pages whose content scrolls inside an element instead of the document are expanded to their full height first |
+| `maxHeight` | 10000 | Cap of a full-page screenshot in px (clipped, not scaled; max. 16000). Endless scrolling pages are cut here |
 | `quality` | 70 | JPEG quality (1-100) |
 | `scroll` | `true` | Scroll down in viewport steps before the screenshot (lazy images, infinite lists), at most `maxHeight` px and 3 s, then back to the top |
 | `timeout` | 20000 | Max. ms for navigation plus waiting for a quiet network. Reduced to `TIMEOUT - 8000` if higher |
@@ -251,14 +251,31 @@ Fury deletes `/inspect` files older than `FURY_SAVE_DIR_MAX_AGE` (other files in
   },
   "colors": {
     "page": {"background": "#f7f5f0", "text": "#1b1d1e"},
+    "header": {
+      "source": "semantic", "bounds": {"x": 0, "y": 0, "width": 1440, "height": 100},
+      "background": "#000000", "backgrounds": [{"color": "#000000", "share": 0.7}, {"color": "#d40000", "share": 0.3}],
+      "text": "#ffffff", "texts": [{"color": "#ffffff", "share": 0.82}, {"color": "#ffd700", "share": 0.18}],
+      "headings": null, "links": ["#ffffff", "#ffd700"], "buttons": []
+    },
+    "content": {
+      "source": "semantic", "bounds": {"x": 0, "y": 100, "width": 1440, "height": 2400},
+      "background": "#f7f5f0", "backgrounds": [{"color": "#f7f5f0", "share": 0.91}, {"color": "#1f4e5f", "share": 0.06}],
+      "text": "#1b1d1e", "texts": [{"color": "#1b1d1e", "share": 0.74}, {"color": "#2a6f97", "share": 0.2}],
+      "headings": "#1b1d1e", "links": ["#2a6f97"],
+      "buttons": [{"background": "#1f4e5f", "text": "#ffffff", "label": "Add to cart"}]
+    },
+    "footer": {
+      "source": "semantic", "bounds": {"x": 0, "y": 2500, "width": 1440, "height": 320},
+      "background": "#1f4e5f", "backgrounds": [{"color": "#1f4e5f", "share": 1}],
+      "text": "#ffffff", "texts": [{"color": "#ffffff", "share": 1}], "headings": "#ffffff", "links": ["#ffffff"], "buttons": []
+    },
     "links": ["#2a6f97"],
     "buttons": [{"background": "#1f4e5f", "text": "#ffffff", "label": "Add to cart"}],
-    "header": {"background": "#ffffff", "text": "#1b1d1e"},
-    "footer": {"background": "#1f4e5f", "text": "#ffffff"},
     "variables": {"--color-primary": "#1f4e5f"}
   },
   "fonts": {"body": "Source Sans 3, sans-serif", "headings": "..."},
   "botProtection": null,
+  "screenshot": {"width": 1440, "height": 10000, "pageHeight": 23400, "truncated": true, "scrollContainer": false},
   "blocked": ["http://169.254.169.254/latest/meta-data/ (private address)"],
   "timings": {"navigationMs": 1830, "totalMs": 4120}
 }
@@ -271,9 +288,27 @@ Fury deletes `/inspect` files older than `FURY_SAVE_DIR_MAX_AGE` (other files in
   closest `nav`/`header`/`footer`/`main` (or ARIA role); `sameSite` = same registrable domain as `finalUrl` (last two
   labels, three for `co.uk`-like second levels).
 - `colors` are **computed** styles as `#rrggbb` (any CSS color syntax; alpha < 0.5 counts as transparent, transparent
-  backgrounds resolve to the first opaque ancestor). `buttons`: up to 8 visible buttons/button-like links, the largest
-  first. `links`: the up to 3 most frequent colors of visible text links in `main`. `variables`: up to 30 custom
-  properties on `:root` whose value is a color, names like `primary`/`brand`/`color` first.
+  backgrounds resolve to the first opaque ancestor).
+  - `page`: background and text color of `body`.
+  - `header`, `content`, `footer`: the colors of each page region, `null` if the region was not found.
+    - `source`: how the region was found. `semantic`: `<header>`/`[role=banner]`, `<main>`/`[role=main]`,
+      `<footer>`/`[role=contentinfo]` (a header or footer inside `article`/`aside`/`main` belongs to that, not to the
+      page). `name`: an element whose id or class contains "header"/"footer" and that spans at least 80% of the
+      page width (header: at most 600 px high, starting in the top 200 px). `body` (content only): no `<main>`, the
+      body without header and footer.
+    - `bounds`: position and size in page coordinates (CSS px).
+    - `background`: the background color behind the region (first opaque ancestor).
+    - `backgrounds`: up to 5 background colors **by painted area** within the region, with their `share` (0..1,
+      at least 0.01). A black header with a red top bar is `[{"color": "#000000", "share": 0.7}, {"color": "#d40000",
+      "share": 0.3}]`. Background images and gradients are not counted (their area goes to the color below).
+    - `text`: the dominant text color (by number of characters of visible text); `texts`: up to 3 with their share.
+    - `headings`: the dominant color of `h1`-`h6`, `null` without headings.
+    - `links`: up to 3 colors of visible text links, the most frequent first.
+    - `buttons`: up to 5 visible buttons/button-like links of the region, the largest first.
+  - `links`, `buttons`: page wide as before (`links`: up to 3 link colors in `main`, otherwise in the whole page;
+    `buttons`: up to 8, the largest first).
+  - `variables`: up to 30 custom properties on `:root` whose value is a color, names like `primary`/`brand`/`color`
+    first.
 - `images`: up to 120, and **the images themselves** as files (see [Response](#response)): no need to download
   anything (a second download would also run into the bot protection). First the page images (up to 100, at least
   16x16 px): every visible `<img>`, CSS background images on the page, and the logo candidates found inside links to
@@ -339,10 +374,14 @@ Fury deletes `/inspect` files older than `FURY_SAVE_DIR_MAX_AGE` (other files in
   - `signals`: what matched (headers, elements, scripts, status), for debugging.
 
   See [Bot protection](#bot-protection) for what Fury does and does not do about it.
+- `screenshot`: what the screenshot shows. `width`/`height`: its size in px; `pageHeight`: the height of the page (CSS
+  px, after scrolling; at least the viewport height); `truncated`: the page is higher than the screenshot (cut at
+  `maxHeight`, e.g. an endless page, or `fullPage: false`); `scrollContainer`: the page's content scrolled inside an
+  element and was expanded to its full height (the positions in the metadata refer to that expanded layout).
 - `blocked`: requests Fury refused, with the reason: `private address`, `port`, `scheme`, `media`, `budget`,
   `connection over 10 MB` (up to 50 entries).
-- `extractError`: only present if the extraction failed. The screenshot, the fields up to `redirects`, `blocked` and
-  `timings` are still there.
+- `extractError`: only present if the extraction failed. The screenshot, the fields up to `redirects`, `screenshot`,
+  `blocked` and `timings` are still there.
 - The whole JSON is kept below ~500 KB (`text`, then `links`, ... are shortened if necessary). The image files count
   towards the byte limits of the page (10 MB per connection, 25 MB per inspect), not towards the JSON.
 
