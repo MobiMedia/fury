@@ -19,7 +19,17 @@ test("parseParams: defaults", () => {
   assert.equal(params.timeout, 20000);
   assert.equal(params.maxLinks, 200);
   assert.equal(params.maxText, 20000);
-  assert.equal(params.acceptLanguage, "de-DE,de;q=0.9,en;q=0.8");
+  assert.equal(params.acceptLanguage, "de-DE,de,en");
+});
+
+test("parseParams: acceptLanguage is a language list, q-values are dropped", () => {
+  const parse = (acceptLanguage) => Inspect.parseParams({url: "https://www.example.com", acceptLanguage}, 30000).acceptLanguage;
+  assert.equal(parse("en-US,en;q=0.9"), "en-US,en");
+  assert.equal(parse("fr"), "fr");
+  assert.equal(parse(" it-IT , it ; q=0.8 "), "it-IT,it");
+  assert.equal(parse("en\r\nX-Evil: 1"), "de-DE,de,en");
+  assert.equal(parse(""), "de-DE,de,en");
+  assert.equal(parse(42), "de-DE,de,en");
 });
 
 test("parseParams: numbers are clamped, the timeout stays below TIMEOUT", () => {
@@ -36,7 +46,7 @@ test("parseParams: numbers are clamped, the timeout stays below TIMEOUT", () => 
   assert.equal(params.maxText, 20000);
   assert.equal(params.fullPage, false);
   assert.equal(params.scroll, false);
-  assert.equal(params.acceptLanguage, "de-DE,de;q=0.9,en;q=0.8");
+  assert.equal(params.acceptLanguage, "de-DE,de,en");
 });
 
 test("parseParams: invalid urls", () => {

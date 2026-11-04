@@ -22,9 +22,11 @@ jobs:
     - uses: actions/checkout@v3
     - uses: actions/setup-node@v4
       with:
-        node-version: 20
+        node-version: 24
         cache: npm
-    - name: Install dependencies (downloads Chrome for puppeteer)
+    - name: Install dependencies
       run: npm ci
+    - name: Install Chrome for puppeteer (npm >= 11 does not run install scripts)
+      run: npx puppeteer browsers install chrome
     - name: Run tests
       run: npm test

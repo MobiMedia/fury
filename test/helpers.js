@@ -30,6 +30,15 @@ exports.startFixtureServer = async ({secretPort} = {}) => {
     res.status(404).type("html").send("<!doctype html><title>Not found</title><h1>Seite nicht gefunden</h1>");
   });
   app.get("/redirect", (req, res) => res.redirect(302, "/simple.html"));
+  // A bot protection challenge like PerimeterX answers it: status 403 plus a captcha page
+  app.get("/px-challenge", (req, res) => res.status(403).sendFile(path.join(FIXTURES, "px-challenge.html")));
+  // Echoes the identity headers the browser sent
+  app.get("/headers", (req, res) => {
+    const echo = ["user-agent", "sec-ch-ua", "sec-ch-ua-platform", "accept-language"].map((name) => `${name}=${req.headers[name] || ""}`).join(" | ");
+    res.type("html").send(`<!doctype html><title>Headers</title><main><pre id="h">${echo.replace(/</g, "&lt;")}</pre><pre id="n"></pre>
+      <script>document.getElementById("n").textContent = "webdriver=" + navigator.webdriver + " | languages=" + navigator.languages.join(",") +
+        " | platform=" + navigator.platform + " | brands=" + (navigator.userAgentData ? navigator.userAgentData.brands.map((b) => b.brand).join(",") : "");</script></main>`);
+  });
   app.use(express.static(FIXTURES));
 
   const server = app.listen(0, "127.0.0.1");

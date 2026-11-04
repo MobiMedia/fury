@@ -13,7 +13,7 @@ All given parameters will be forwarded to the target page via the `FURY_PARAMS` 
 
 ## Environment Settings
 There are several environment variables which Fury is using:
-- `DEBUG`: If `DEBUG=1`, Fury will open the browser not in headless mode and open the development tools in each browser.
+- `DEBUG`: If `DEBUG=1`, Fury will open the browser not in headless mode and open the development tools in each browser. `/inspect` additionally prints the console output of the page and its result (the metadata, the screenshot size, the written files or the error) to the console.
 - `CONCURRENT_LIMIT`: Defines the amount of max. concurrent rendering processes. Default is one concurrent rendering.
 - `TIMEOUT`: Defines the timeout for all requests in milliseconds. Default: 30000 (30 seconds)
 - `PROTOCOL_TIMEOUT`: Defines the protocolTimeout for puppeteer in milliseconds. Default: 300000 (5 minutes)
@@ -135,7 +135,9 @@ If the HTTP request has the string `msgpack` in the HTTP `Accept:` header, Fury 
 `/inspect` (only with `FURY_ENDPOINTS` containing `inspect`)
 
 Opens any URL of the public web in an isolated browser and returns **what the page looks like** (a JPEG screenshot)
-and **what is on it** (structured metadata: links, text, headings, colors, fonts, logos, products, JSON-LD, ...).
+and **what is on it** (structured metadata: links, text, headings, images, forms, structured data, colors, fonts, ...).
+Fury describes the page as it is and does not interpret it for a specific kind of site: a shop, a blog or a company
+page all return the same fields.
 Typical uses are crawlers, link previews, site analysis or AI agents which browse the web page by page.
 
 The URL comes from whoever calls the service, so `/inspect` treats every page as hostile and refuses to reach anything
@@ -157,14 +159,14 @@ Unlike the other endpoints, `/inspect` does not support `cookies` or `renderEven
 | `timeout` | 20000 | Max. ms for navigation plus waiting for a quiet network. Reduced to `TIMEOUT - 8000` if higher |
 | `maxLinks` | 200 | Cap of `links` (max. 1000) |
 | `maxText` | 20000 | Cap of `text` in characters (max. 200000) |
-| `acceptLanguage` | `de-DE,de;q=0.9,en;q=0.8` | `Accept-Language` header sent to the site |
+| `acceptLanguage` | `de-DE,de,en` | Languages of the visitor, comma separated. Chrome generates the `Accept-Language` header from it (with q-values, e.g. `de-DE,de;q=0.9,en;q=0.8`) and `navigator.languages` matches it. q-values in the parameter are ignored |
 
 Numbers outside the allowed range are clamped, not rejected.
 
 #### Behaviour
 1. Every request gets a fresh incognito browser context (no cookies or storage from earlier requests) with its own
    proxy (see [Security model](#security-model)). Invalid TLS certificates are accepted, like for the other endpoints.
-   The user agent is the regular Chrome one (`HeadlessChrome` replaced by `Chrome`).
+   The browser presents itself like a regular Chrome, see [Bot protection](#bot-protection).
 2. Fury navigates until `domcontentloaded`, then waits until there are no more than 2 open connections for 500 ms, at
    most until `timeout`. A page which never becomes idle (analytics, chat widgets) is not an error: Fury takes what
    is there. Content rendered client side by then is included.
@@ -178,6 +180,7 @@ Numbers outside the allowed range are clamped, not rejected.
 #### Example
 ```shell script
 npm install
+npx puppeteer browsers install chrome   # once, npm >= 11 does not run puppeteer's install script
 mkdir -p /tmp/fury
 FURY_ENDPOINTS=render,inspect FURY_SAVE_DIR=/tmp/fury PORT=3100 DEBUG=1 node server.js
 curl -s localhost:3100/inspect -H 'Content-Type: application/json' -d '{"url":"https://www.example.com"}'
@@ -211,14 +214,25 @@ older than `FURY_SAVE_DIR_MAX_AGE` (other files in the directory are never touch
   "redirects": ["https://shop.example.com/", "https://shop.example.com/en/"],
   "title": "...",
   "lang": "en",
-  "meta": {"description": "...", "themeColor": "#1f4e5f", "ogSiteName": "...", "ogType": "...", "ogImage": "https://...", "canonical": "https://..."},
+  "meta": {"description": "...", "themeColor": "#1f4e5f", "canonical": "https://..."},
   "alternates": [{"hreflang": "de", "url": "https://..."}],
-  "logos": [{"url": "https://.../logo.svg", "source": "img|icon|apple-touch-icon|og:image", "alt": "..."}],
   "headings": [{"level": 1, "text": "..."}],
   "links": [{"url": "https://...", "text": "Women", "area": "nav|header|footer|main|other", "sameSite": true}],
   "text": "visible text of the page (innerText of main, else body), whitespace collapsed",
-  "products": [{"name": "...", "price": "149.90", "currency": "EUR", "image": "https://...", "url": "https://...", "source": "json-ld|microdata|og"}],
-  "jsonLd": [{"@type": "Organization", "name": "..."}],
+  "images": [
+    {"url": "https://.../logo.svg", "source": "img", "alt": "...", "width": 120, "height": 40, "area": "header", "hints": ["logo", "links-home", "above-fold"]},
+    {"url": "https://.../apple-touch-icon.png", "source": "apple-touch-icon", "alt": "", "width": 180, "height": 180, "area": null, "hints": []}
+  ],
+  "forms": [
+    {"action": "https://.../login", "method": "post", "area": "main", "submit": "Sign in",
+     "fields": [{"type": "email", "name": "email", "label": "E-Mail", "required": true}, {"type": "password", "name": "password", "label": "Password", "required": true}]}
+  ],
+  "structuredData": {
+    "jsonLd": [{"@type": "Organization", "name": "..."}],
+    "microdata": [{"type": "https://schema.org/Product", "properties": {"name": "...", "offers": {"type": "https://schema.org/Offer", "properties": {"price": "149.90"}}}}],
+    "openGraph": {"og:site_name": "...", "og:type": "website", "og:image": "https://..."},
+    "twitter": {"twitter:card": "summary_large_image"}
+  },
   "colors": {
     "page": {"background": "#f7f5f0", "text": "#1b1d1e"},
     "links": ["#2a6f97"],
@@ -228,7 +242,7 @@ older than `FURY_SAVE_DIR_MAX_AGE` (other files in the directory are never touch
     "variables": {"--color-primary": "#1f4e5f"}
   },
   "fonts": {"body": "Source Sans 3, sans-serif", "headings": "..."},
-  "hasLoginForm": false,
+  "botProtection": null,
   "blocked": ["http://169.254.169.254/latest/meta-data/ (private address)"],
   "timings": {"navigationMs": 1830, "totalMs": 4120}
 }
@@ -244,9 +258,37 @@ older than `FURY_SAVE_DIR_MAX_AGE` (other files in the directory are never touch
   backgrounds resolve to the first opaque ancestor). `buttons`: up to 8 visible buttons/button-like links, the largest
   first. `links`: the up to 3 most frequent colors of visible text links in `main`. `variables`: up to 30 custom
   properties on `:root` whose value is a color, names like `primary`/`brand`/`color` first.
-- `products`: from JSON-LD (`Product`, also inside `@graph`/`ItemList`), microdata and `og:type=product`, up to 30.
-  `jsonLd`: the parsed blocks (invalid ones skipped), each shortened to ~5 KB, up to 10.
-- `hasLoginForm`: the page shows a visible `input[type=password]`.
+- `images`: up to 50, first the visible images (at least 16x16 px; logo candidates first, then the largest), then the
+  images the page declares. `source`: `img`, `icon`, `apple-touch-icon`, `mask-icon`, `og:image` or `twitter:image`.
+  `width`/`height`: rendered size of visible images, the `sizes` of icons, otherwise `null`. `area`: page region like
+  for links (`null` for declared images). `hints` are observations, not conclusions: `logo` (the image or a close
+  ancestor mentions "logo"/"brand" in id, class, alt or file name), `links-home` (inside a link to the start page),
+  `above-fold` (visible without scrolling).
+- `forms`: up to 10 forms with visible fields. `action` is absolute (a form without `action` submits to the page
+  itself), `method` lower case. `fields`: up to 20 visible fields (no hidden fields, buttons or values), `type` is the
+  input type or `select`/`textarea`, `label` from `<label>`, `aria-label`, `placeholder` or `title`. `submit`: label of
+  the first visible submit button. Visible fields outside of any `<form>` (common in client side rendered pages) are
+  collected in one extra entry with `action`, `method` and `area` set to `null`. Example: a login page has a form
+  with a `password` field.
+- `structuredData`: what the page declares for machines, as it is (not interpreted, so products, articles, events,
+  recipes, organizations, ... all show up here):
+  - `jsonLd`: the parsed `application/ld+json` blocks (invalid ones skipped), up to 10, each shortened to ~5 KB.
+  - `microdata`: top-level microdata items (`itemscope`), up to 30, as `{"type", "properties"}`; nested items are
+    objects of the same shape, repeated properties become arrays.
+  - `openGraph`: all Open Graph tags including their namespaces (`og:`, `product:`, `article:`, ...), up to 50 keys;
+    repeated keys (e.g. several `og:image`) become arrays, URLs are absolute.
+  - `twitter`: the `twitter:` card tags, the same way.
+- `botProtection`: informational, `null` if nothing was recognized. Otherwise
+  `{"vendor": "...", "challenge": true|false, "signals": ["..."]}`:
+  - `vendor`: `perimeterx`, `cloudflare`, `datadome`, `akamai`, `imperva`, `aws-waf`, `recaptcha`, `hcaptcha` or
+    `unknown` (a refused page asking to prove being human, without a known vendor).
+  - `challenge: true`: the page **is** a block or CAPTCHA page instead of the requested content (usually together with
+    status 403/429/503). Screenshot and metadata show the challenge, not the site.
+  - `challenge: false`: the vendor's protection or a CAPTCHA widget is present on an otherwise normal page (e.g. a
+    reCAPTCHA in a contact form); the content is real.
+  - `signals`: what matched (headers, elements, scripts, status), for debugging.
+
+  See [Bot protection](#bot-protection) for what Fury does and does not do about it.
 - `blocked`: requests Fury refused, with the reason: `private address`, `port`, `scheme`, `media`, `budget`,
   `connection over 10 MB` (up to 50 entries).
 - `extractError`: only present if the extraction failed. The screenshot, the fields up to `redirects`, `blocked` and
@@ -264,6 +306,24 @@ older than `FURY_SAVE_DIR_MAX_AGE` (other files in the directory are never touch
 | `connect` | The connection failed |
 | `timeout` | No `domcontentloaded` within `timeout`, or the whole request took longer than `TIMEOUT` |
 | `busy` | All slots and the queue are full, or no slot became free before `TIMEOUT` |
+
+### Bot protection
+Many sites sit behind bot protection (PerimeterX/HUMAN, Cloudflare, DataDome, Akamai, ...) which blocks headless
+browsers with a CAPTCHA or an "access denied" page, while a regular Chrome gets through. Fury's `/inspect` browser
+therefore presents itself like the regular Chrome it is built from, without inventing anything:
+
+- the User-Agent and the client hints (`sec-ch-ua*`, `navigator.userAgentData`) say `Chrome`/`Google Chrome` instead
+  of `HeadlessChrome`; all other values (version, platform, architecture) are the real ones
+- Chrome's automation switches are not set (`--enable-automation` dropped, `AutomationControlled` disabled), so
+  `navigator.webdriver` is `false` like in a normal browser
+- `Accept-Language` and `navigator.languages` come from the same setting (`acceptLanguage`), so they are consistent
+- a window of the viewport size, Chrome's own TLS and HTTP/2 stacks (the proxy only tunnels)
+
+What Fury does **not** do: it does not solve or click through challenges (CAPTCHAs, "press and hold"), it does not
+fake fingerprints (WebGL, canvas, fonts, plugins) and it does not hide that it is headless beyond the points above.
+Whether a site lets Fury in also depends on things outside Fury: the reputation of the IP address (data center ranges
+are often blocked outright), the request rate, and the fact that every `/inspect` starts without cookies, so a site
+sees a first-time visitor each time. If a page is a challenge, the metadata says so in `botProtection`.
 
 ### Security model
 Fury usually runs inside a private network (a data center, a cloud VPC, a Kubernetes cluster), and the `/inspect`

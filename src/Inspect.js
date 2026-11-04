@@ -3,6 +3,7 @@ const fs = require("fs");
 const path = require("path");
 const puppeteer = require("puppeteer");
 const AddressPolicy = require("./AddressPolicy.js");
+const BotProtection = require("./BotProtection.js");
 const BrowserUtils = require("./BrowserUtils.js");
 const InspectExtract = require("./InspectExtract.js");
 const InspectProxy = require("./InspectProxy.js");
@@ -72,9 +73,12 @@ exports.parseParams = (body, globalTimeout) => {
     throw new InspectError("invalid", "url must not contain credentials");
   }
 
-  const acceptLanguage = typeof params.acceptLanguage === "string" && /^[\w\-,;=. *]{1,200}$/.test(params.acceptLanguage)
-    ? params.acceptLanguage
-    : DEFAULT_ACCEPT_LANGUAGE;
+  const languages = (typeof params.acceptLanguage === "string" ? params.acceptLanguage : DEFAULT_ACCEPT_LANGUAGE)
+    .split(",")
+    .map((entry) => entry.split(";")[0].trim())
+    .filter((entry) => /^[A-Za-z]{1,8}(-[A-Za-z0-9]{1,8})*$|^\*$/.test(entry))
+    .slice(0, 10);
+  const acceptLanguage = languages.length ? languages.join(",") : DEFAULT_ACCEPT_LANGUAGE.split(",").map((entry) => entry.split(";")[0]).join(",");
 
   return {
     url: url.trim(),
@@ -123,8 +127,9 @@ const capMetadata = (metadata) => {
   const steps = [
     () => metadata.text && (metadata.text = metadata.text.slice(0, Math.floor(metadata.text.length / 2))),
     () => metadata.links?.length && (metadata.links = metadata.links.slice(0, Math.floor(metadata.links.length / 2))),
-    () => metadata.jsonLd?.length && (metadata.jsonLd = metadata.jsonLd.slice(0, Math.floor(metadata.jsonLd.length / 2))),
-    () => metadata.products?.length && (metadata.products = metadata.products.slice(0, Math.floor(metadata.products.length / 2))),
+    () => metadata.structuredData?.jsonLd?.length && (metadata.structuredData.jsonLd = metadata.structuredData.jsonLd.slice(0, Math.floor(metadata.structuredData.jsonLd.length / 2))),
+    () => metadata.structuredData?.microdata?.length && (metadata.structuredData.microdata = metadata.structuredData.microdata.slice(0, Math.floor(metadata.structuredData.microdata.length / 2))),
+    () => metadata.images?.length && (metadata.images = metadata.images.slice(0, Math.floor(metadata.images.length / 2))),
     () => metadata.headings?.length && (metadata.headings = metadata.headings.slice(0, Math.floor(metadata.headings.length / 2)))
   ];
 
@@ -135,7 +140,7 @@ const capMetadata = (metadata) => {
   return metadata;
 };
 
-const inspectPage = async ({browser, context, proxy, checker, params, userAgent, blocked, addBlocked, startedAt}) => {
+const inspectPage = async ({context, proxy, checker, params, userAgent, userAgentMetadata, platform, blocked, addBlocked, startedAt}) => {
   const page = await context.newPage();
 
   // Popups the page opens are closed right away (they would use the same proxy, but nobody needs them)
@@ -148,15 +153,6 @@ const inspectPage = async ({browser, context, proxy, checker, params, userAgent,
     }
   });
 
-  try {
-    const session = await browser.target().createCDPSession();
-    await session.send("Browser.setDownloadBehavior", {behavior: "deny", browserContextId: context.id});
-    await session.detach().catch(() => {});
-  } catch (e) {
-    // Headless Chrome has no download directory by default; this only makes the denial explicit
-    Utils.log(`Inspect: could not deny downloads explicitly: ${e.message}`);
-  }
-
   page.on("dialog", (dialog) => dialog.dismiss().catch(() => {}));
 
   if (BrowserUtils.isDebugMode()) {
@@ -164,8 +160,18 @@ const inspectPage = async ({browser, context, proxy, checker, params, userAgent,
   }
 
   await page.setBypassServiceWorker(true);
-  await page.setUserAgent(userAgent);
-  await page.setExtraHTTPHeaders({"Accept-Language": params.acceptLanguage});
+  // Identity: User-Agent, client hints, platform and the languages in one native override, so the Accept-Language
+  // header (Chrome adds the q-values) and navigator.languages are consistent (the same way Playwright's "locale"
+  // works). page.setUserAgent additionally covers cross-origin iframes, which run in their own process.
+  await page.setUserAgent(userAgent, userAgentMetadata || undefined);
+  const identitySession = await page.createCDPSession();
+  await identitySession.send("Network.setUserAgentOverride", {
+    userAgent,
+    acceptLanguage: params.acceptLanguage,
+    platform,
+    userAgentMetadata: userAgentMetadata || undefined
+  });
+  // The override lives as long as the session: it is closed with the context
   await page.setViewport({width: params.width, height: params.height, deviceScaleFactor: 1});
 
   // Why the main document could not be loaded, if we refused it
@@ -338,6 +344,18 @@ const inspectPage = async ({browser, context, proxy, checker, params, userAgent,
     extractError = e?.message || String(e);
   }
 
+  // Bot protection / CAPTCHA (informational), independent of the extraction
+  let botProtection = null;
+  try {
+    botProtection = BotProtection.detect({
+      status: response ? response.status() : null,
+      headers: response ? response.headers() : {},
+      page: await evaluateWithRetry(page, BotProtection.collectPageSignals).catch(() => null)
+    });
+  } catch (e) {
+    Utils.log(`Inspect: bot protection detection failed: ${e.message}`);
+  }
+
   const redirectChain = response ? response.request().redirectChain().map((request) => stripHash(request.url())) : [];
 
   const metadata = {
@@ -349,16 +367,16 @@ const inspectPage = async ({browser, context, proxy, checker, params, userAgent,
     lang: null,
     meta: null,
     alternates: [],
-    logos: [],
     headings: [],
     links: [],
     text: "",
-    products: [],
-    jsonLd: [],
+    images: [],
+    forms: [],
+    structuredData: {jsonLd: [], microdata: [], openGraph: {}, twitter: {}},
     colors: null,
     fonts: null,
-    hasLoginForm: false,
     ...extracted,
+    botProtection,
     blocked,
     timings: {navigationMs, totalMs: Date.now() - startedAt}
   };
@@ -415,12 +433,15 @@ exports.run = async (manager, body, {signal, allowPrivate}) => {
 
     context = await browser.createBrowserContext({
       proxyServer: `http://127.0.0.1:${proxy.port}`,
-      proxyBypassList: ["<-loopback>"]
+      proxyBypassList: ["<-loopback>"],
+      downloadBehavior: {policy: "deny"}
     });
 
     const job = inspectPage({
-      browser, context, proxy, checker, params, blocked, addBlocked, startedAt,
-      userAgent: manager.getUserAgent()
+      context, proxy, checker, params, blocked, addBlocked, startedAt,
+      userAgent: manager.getUserAgent(),
+      userAgentMetadata: manager.getUserAgentMetadata(),
+      platform: manager.getPlatform()
     });
     // The job keeps running for a moment after a timeout until the context is closed; its error is irrelevant then
     job.catch(() => {});

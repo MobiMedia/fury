@@ -85,17 +85,21 @@ describe("/inspect with files (FURY_SAVE_DIR) and an exempt fixture host", () =>
     assert.deepEqual(metadata.meta, {
       description: "Handgemachte Schuhe aus Hamburg.",
       themeColor: "#1f4e5f",
-      ogSiteName: "Nordlicht Shoes",
-      ogType: "website",
-      ogImage: `${base}/og.jpg`,
       canonical: `${base}/de/`
     });
     assert.deepEqual(metadata.alternates, [{hreflang: "en", url: `${base}/en/`}, {hreflang: "de", url: `${base}/de/`}]);
 
-    assert.deepEqual(metadata.logos[0], {url: `${base}/logo.svg`, source: "img", alt: "Nordlicht Shoes"});
-    assert.ok(metadata.logos.some((logo) => logo.source === "apple-touch-icon" && logo.url === `${base}/apple-touch-icon.png`));
-    assert.ok(metadata.logos.some((logo) => logo.source === "icon" && logo.url === `${base}/favicon.ico`));
-    assert.ok(metadata.logos.some((logo) => logo.source === "og:image"));
+    // Images: visible ones (logo candidates first) and the declared ones
+    assert.deepEqual(metadata.images[0], {
+      url: `${base}/logo.svg`, source: "img", alt: "Nordlicht Shoes", width: 120, height: 40, area: "header",
+      hints: ["logo", "links-home", "above-fold"]
+    });
+    const instagram = metadata.images.find((image) => image.url === `${base}/instagram.svg`);
+    assert.equal(instagram.area, "main");
+    assert.equal(instagram.hints.includes("logo"), false);
+    assert.ok(metadata.images.some((image) => image.source === "apple-touch-icon" && image.url === `${base}/apple-touch-icon.png`));
+    assert.ok(metadata.images.some((image) => image.source === "icon" && image.url === `${base}/favicon.ico`));
+    assert.ok(metadata.images.some((image) => image.source === "og:image" && image.url === `${base}/og.jpg`));
 
     assert.deepEqual(metadata.headings, [{level: 1, text: "Schuhe aus dem Norden"}, {level: 2, text: "Neu eingetroffen"}]);
 
@@ -113,11 +117,32 @@ describe("/inspect with files (FURY_SAVE_DIR) and an exempt fixture host", () =>
     assert.match(metadata.text, /Robuste Stiefel, handgemacht in Hamburg\./);
     assert.doesNotMatch(metadata.text, /Impressum/, "text comes from main");
 
-    assert.deepEqual(metadata.products, [{
-      name: "Fjord Boot", price: "149.90", currency: "EUR", image: `${base}/img/fjord.jpg`, url: `${base}/p/fjord-boot`, source: "json-ld"
+    // Structured data as declared by the page, not interpreted
+    const {jsonLd, microdata, openGraph, twitter} = metadata.structuredData;
+    assert.equal(jsonLd.length, 2, "invalid JSON-LD is skipped");
+    assert.equal(jsonLd[0]["@type"], "Organization");
+    assert.deepEqual(jsonLd[1].offers, {"@type": "Offer", price: "149.90", priceCurrency: "EUR"});
+    assert.deepEqual(microdata, [{
+      type: "https://schema.org/Product",
+      properties: {
+        name: "Fjord Boot",
+        offers: {type: "https://schema.org/Offer", properties: {price: "149.90", priceCurrency: "EUR"}}
+      }
     }]);
-    assert.equal(metadata.jsonLd.length, 2, "invalid JSON-LD is skipped");
-    assert.equal(metadata.jsonLd[0]["@type"], "Organization");
+    assert.deepEqual(openGraph, {"og:site_name": "Nordlicht Shoes", "og:type": "website", "og:image": `${base}/og.jpg`});
+    assert.deepEqual(twitter, {"twitter:card": "summary"});
+
+    // Forms: visible fields only (no hidden ones), labels from <label>/placeholder
+    assert.deepEqual(metadata.forms, [{
+      action: `${base}/login`,
+      method: "post",
+      area: "main",
+      fields: [
+        {type: "text", name: "user", label: "E-Mail", required: false},
+        {type: "password", name: "password", label: "Passwort", required: true}
+      ],
+      submit: "Anmelden"
+    }]);
 
     // Computed colors; the transparent header resolves to the white wrapper
     assert.deepEqual(metadata.colors.page, {background: "#f7f5f0", text: "#1b1d1e"});
@@ -133,9 +158,12 @@ describe("/inspect with files (FURY_SAVE_DIR) and an exempt fixture host", () =>
 
     assert.match(metadata.fonts.body, /Source Sans 3/);
     assert.match(metadata.fonts.headings, /Georgia/);
-    assert.equal(metadata.hasLoginForm, true);
+    for (const removed of ["products", "jsonLd", "logos", "hasLoginForm"]) {
+      assert.equal(metadata[removed], undefined, removed);
+    }
 
     assert.deepEqual(metadata.blocked, []);
+    assert.equal(metadata.botProtection, null);
     assert.equal(typeof metadata.timings.navigationMs, "number");
     assert.ok(metadata.timings.totalMs >= metadata.timings.navigationMs);
 
@@ -169,6 +197,34 @@ describe("/inspect with files (FURY_SAVE_DIR) and an exempt fixture host", () =>
     const {metadata} = await inspect({url: `${base}/missing.html`});
     assert.equal(metadata.status, 404);
     assert.equal(metadata.title, "Not found");
+  });
+
+  test("a bot protection challenge is reported (informational)", async () => {
+    const {metadata, screenshot} = await inspect({url: `${base}/px-challenge`});
+    assert.equal(metadata.status, 403);
+    assert.equal(metadata.botProtection.vendor, "perimeterx");
+    assert.equal(metadata.botProtection.challenge, true);
+    assert.ok(metadata.botProtection.signals.includes("#px-captcha"));
+    assert.ok(metadata.botProtection.signals.includes("status 403"));
+    assert.ok(screenshot.length > 100, "screenshot and metadata are still returned");
+  });
+
+  test("the browser presents itself like a regular Chrome", async () => {
+    const {metadata} = await inspect({url: `${base}/headers`});
+    assert.doesNotMatch(metadata.text, /Headless/);
+    assert.match(metadata.text, /user-agent=Mozilla\/5\.0 .*Chrome\/\d+/);
+    assert.match(metadata.text, /sec-ch-ua=.*"Google Chrome";v="\d+"/);
+    // Chrome generates the q-values from the language list
+    assert.match(metadata.text, /accept-language=de-DE,de;q=0\.9,en;q=0\.8/);
+    assert.match(metadata.text, /webdriver=false/);
+    assert.match(metadata.text, /languages=de-DE,de,en/);
+    assert.match(metadata.text, /brands=.*Google Chrome/);
+  });
+
+  test("acceptLanguage changes header and navigator.languages together", async () => {
+    const {metadata} = await inspect({url: `${base}/headers`, acceptLanguage: "en-US,en"});
+    assert.match(metadata.text, /accept-language=en-US,en;q=0\.9/);
+    assert.match(metadata.text, /languages=en-US,en/);
   });
 
   test("redirects are listed", async () => {

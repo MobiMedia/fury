@@ -88,7 +88,8 @@ exports.pdf = async (page, params, rawData, pdfOptions = {}) => {
     ...pdfOptions
   });
 
-  return rawData ? pdfData : pdfData.toString("base64");
+  // page.pdf() returns a Uint8Array, its toString() is not base64
+  return rawData ? pdfData : Buffer.from(pdfData).toString("base64");
 };
 
 exports.file = async (page, params, rawData, fileOptions = {}) => {
@@ -157,5 +158,5 @@ exports.file = async (page, params, rawData, fileOptions = {}) => {
   }
 
   const bytes = await decoded.bytes();
-  return rawData ? bytes : bytes.toString("base64");
+  return rawData ? bytes : Buffer.from(bytes).toString("base64");
 };

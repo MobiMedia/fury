@@ -200,8 +200,16 @@ if (inspectEnabled) {
         allowPrivate: inspectAllowPrivate
       });
 
+      if (BrowserUtils.isDebugMode()) {
+        // The screenshot itself is not printed, only its size
+        Utils.log(`Inspect result for "${req.body?.url}" (screenshot: ${inspected.screenshot.length} bytes JPEG):\n${JSON.stringify(inspected.metadata, null, 2)}`);
+      }
+
       if (saveDir) {
         result = {...await Inspect.writeFiles(saveDir, inspected), error: null};
+        if (BrowserUtils.isDebugMode()) {
+          Utils.log(`Inspect files: ${path.join(saveDir, result.file)}, ${path.join(saveDir, result.screenshot)}`);
+        }
       } else {
         result = {
           data: {
@@ -213,6 +221,9 @@ if (inspectEnabled) {
       }
     } catch (e) {
       result = {data: null, error: Utils.getError(e)};
+      if (BrowserUtils.isDebugMode()) {
+        Utils.log(`Inspect error for "${req.body?.url}": ${result.error}`);
+      }
     } finally {
       Utils.log(`Finished inspect request for "${req.body?.url}"`);
     }

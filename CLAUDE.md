@@ -9,7 +9,8 @@ Fury is a Node.js HTTP service that wraps Puppeteer (via puppeteer-cluster) to g
 ## Commands
 
 ```bash
-npm install          # Install dependencies
+npm install          # Install dependencies (Node >= 22.12)
+npx puppeteer browsers install chrome  # Chrome for puppeteer, npm >= 11 skips install scripts
 npm start            # Start the server (runs server.js on port 3000)
 docker build -t fury .  # Build the Docker image
 npm test             # node:test suites in test/ (integration tests need puppeteer's Chrome)
@@ -30,6 +31,7 @@ There is no linter or type checker configured.
 - **`src/InspectBrowser.js`** — The dedicated inspect browser (no puppeteer-cluster), slots with a bounded queue, `InspectError` (`<code>: <message>`).
 - **`src/InspectProxy.js`** — Per-request forward proxy on 127.0.0.1; the enforcement point for private addresses (connects to exactly the checked address, closing DNS rebinding) and byte limits.
 - **`src/AddressPolicy.js`** — Pure address/port rules plus a per-request DNS cache, shared by the proxy and the request interception.
+- **`src/BotProtection.js`** — Informational detection of bot protection / CAPTCHA pages (`metadata.botProtection`); never solves or avoids them.
 - **`src/InspectExtract.js`** — The in-page metadata extraction; runs via `page.evaluate`, so it must stay self-contained.
 
 ## Key Concepts

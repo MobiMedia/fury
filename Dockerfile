@@ -1,4 +1,4 @@
-FROM amd64/node:20-slim
+FROM amd64/node:24-bookworm-slim
 
 ENV DEBIAN_FRONTEND noninteractive
 ENV LANG en_US.UTF-8
@@ -25,7 +25,10 @@ COPY --chown=fury .fonts.conf ./
 
 ENV DBUS_SESSION_BUS_ADDRESS autolaunch:
 
-RUN npm ci
+# The Chrome of puppeteer is installed explicitly: npm >= 11 does not run install scripts by default.
+# (google-chrome-stable above is only installed for its system libraries, /opt/google is removed again.)
+RUN npm ci \
+     && npx puppeteer browsers install chrome
 
 COPY . .
 
