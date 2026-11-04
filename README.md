@@ -3,6 +3,7 @@
 Fury is a Node.js wrapper for the [Puppeteer](https://github.com/puppeteer/puppeteer) `screenshot` and `pdf` function.
 
 You can `POST` to `/screenshot` or `/pdf` to create either a screenshot or generate a pdf from a given URL.
+`/inspect` returns a screenshot and structured metadata of any public website, see [Inspect a website](#inspect-a-website).
 All parameters have to be sent in the `POST` body and they have to be in JSON syntax.
 
 Unless `renderEventName` isn't set, Fury will wait for the screenshot or pdf creation until no network request is
@@ -16,6 +17,11 @@ There are several environment variables which Fury is using:
 - `CONCURRENT_LIMIT`: Defines the amount of max. concurrent rendering processes. Default is one concurrent rendering.
 - `TIMEOUT`: Defines the timeout for all requests in milliseconds. Default: 30000 (30 seconds)
 - `PROTOCOL_TIMEOUT`: Defines the protocolTimeout for puppeteer in milliseconds. Default: 300000 (5 minutes)
+- `FURY_SAVE_DIR`: If set, results are written to this directory and the response contains the file name(s) instead of the data.
+- `FURY_ENDPOINTS`: Which endpoints this instance serves, comma separated. `render` (default): `/screenshot`, `/pdf`, `/file`. `inspect`: [`/inspect`](#inspect-a-website). `render,inspect`: both. Endpoints which are not enabled answer 404 and their browser is not started.
+- `CONCURRENT_LIMIT_INSPECT`: Max. concurrent `/inspect` requests. Default: 2. Up to five times as many requests wait in a queue, further requests are answered with `busy` right away.
+- `FURY_SAVE_DIR_MAX_AGE`: Age in seconds after which result files of `/inspect` in `FURY_SAVE_DIR` are deleted (checked on every `/inspect`, other files are not touched). Default: 3600.
+- `FURY_INSPECT_ALLOW_PRIVATE`: **For development and tests only, never in production.** `1` allows `/inspect` to reach non-public addresses and every port; a comma separated list of `host:port` entries (e.g. `127.0.0.1:8080`) exempts exactly these. Fury logs a warning at start when it is set.
 
 ## Request
 ### Take a screenshot
@@ -122,3 +128,180 @@ After processing the target page, Fury will send a response in JSON syntax:
 
 ### MessagePack
 If the HTTP request has the string `msgpack` in the HTTP `Accept:` header, Fury will return the same response as a [MessagePack](https://msgpack.org/) map. Because MessagePack allows binary data, this is more efficient because the data doesn't have to be encoded to base64 and it allows to return larger files.
+
+---
+
+## Inspect a website
+`/inspect` (only with `FURY_ENDPOINTS` containing `inspect`)
+
+Opens any URL of the public web in an isolated browser and returns **what the page looks like** (a JPEG screenshot)
+and **what is on it** (structured metadata: links, text, headings, colors, fonts, logos, products, JSON-LD, ...).
+Typical uses are crawlers, link previews, site analysis or AI agents which browse the web page by page.
+
+The URL comes from whoever calls the service, so `/inspect` treats every page as hostile and refuses to reach anything
+that is not on the public internet, see [Security model](#security-model). It is a separate endpoint with its own
+browser: `/screenshot`, `/pdf` and `/file` are not affected and keep loading any URL, including `localhost`.
+
+Unlike the other endpoints, `/inspect` does not support `cookies` or `renderEventName` and does not expose
+`FURY_PARAMS` to the page, so no data of the caller is passed on to the visited site.
+
+#### Available Parameters
+| Parameter | Default | Meaning |
+|---|---|---|
+| `url` (**Required**) | | Absolute `http(s)` URL, without credentials |
+| `width`, `height` | 1440, 900 | Viewport (320-3840 x 320-2160), `deviceScaleFactor` 1 |
+| `fullPage` | `true` | Screenshot of the whole page, capped at `maxHeight` |
+| `maxHeight` | 4000 | Cap of a full-page screenshot in px (clipped, not scaled; max. 16000) |
+| `quality` | 70 | JPEG quality (1-100) |
+| `scroll` | `true` | Scroll down in viewport steps before the screenshot (lazy images, infinite lists), at most `maxHeight` px and 3 s, then back to the top |
+| `timeout` | 20000 | Max. ms for navigation plus waiting for a quiet network. Reduced to `TIMEOUT - 8000` if higher |
+| `maxLinks` | 200 | Cap of `links` (max. 1000) |
+| `maxText` | 20000 | Cap of `text` in characters (max. 200000) |
+| `acceptLanguage` | `de-DE,de;q=0.9,en;q=0.8` | `Accept-Language` header sent to the site |
+
+Numbers outside the allowed range are clamped, not rejected.
+
+#### Behaviour
+1. Every request gets a fresh incognito browser context (no cookies or storage from earlier requests) with its own
+   proxy (see [Security model](#security-model)). Invalid TLS certificates are accepted, like for the other endpoints.
+   The user agent is the regular Chrome one (`HeadlessChrome` replaced by `Chrome`).
+2. Fury navigates until `domcontentloaded`, then waits until there are no more than 2 open connections for 500 ms, at
+   most until `timeout`. A page which never becomes idle (analytics, chat widgets) is not an error: Fury takes what
+   is there. Content rendered client side by then is included.
+3. Optional scrolling, 300 ms to settle, screenshot, metadata extraction.
+4. Fury does not interact with the page. Cookie/consent banners are not dismissed, so the screenshot may show one;
+   links, text and metadata are extracted anyway.
+5. Dialogs (`alert`/`confirm`) are dismissed, popups closed, downloads denied, service workers bypassed and permission
+   prompts denied.
+6. The whole request, including the time waiting for a free slot, is limited by `TIMEOUT`.
+
+#### Example
+```shell script
+npm install
+mkdir -p /tmp/fury
+FURY_ENDPOINTS=render,inspect FURY_SAVE_DIR=/tmp/fury PORT=3100 DEBUG=1 node server.js
+curl -s localhost:3100/inspect -H 'Content-Type: application/json' -d '{"url":"https://www.example.com"}'
+```
+
+#### Response
+Without `FURY_SAVE_DIR`, the result is returned inline, the screenshot base64 encoded (binary with
+[MessagePack](#messagepack)):
+```json
+{"data": {"metadata": {...}, "screenshot": "/9j/4AAQ..."}, "error": null}
+```
+
+With `FURY_SAVE_DIR`, Fury writes two files and only returns their names. This avoids sending the image over HTTP when
+the caller can read the directory (e.g. a shared volume):
+```json
+{"file": "<id>.json", "screenshot": "<id>.jpg", "error": null}
+```
+- `<id>.jpg`: the screenshot
+- `<id>.json`: the metadata (UTF-8)
+
+`<id>` is a random UUID. The files are written under a temporary name and renamed, so they are complete when the
+response arrives. The caller is expected to delete them after reading; as a safety net, Fury deletes `/inspect` files
+older than `FURY_SAVE_DIR_MAX_AGE` (other files in the directory are never touched).
+
+#### Metadata
+```json
+{
+  "requestedUrl": "https://shop.example.com",
+  "finalUrl": "https://shop.example.com/en/",
+  "status": 200,
+  "redirects": ["https://shop.example.com/", "https://shop.example.com/en/"],
+  "title": "...",
+  "lang": "en",
+  "meta": {"description": "...", "themeColor": "#1f4e5f", "ogSiteName": "...", "ogType": "...", "ogImage": "https://...", "canonical": "https://..."},
+  "alternates": [{"hreflang": "de", "url": "https://..."}],
+  "logos": [{"url": "https://.../logo.svg", "source": "img|icon|apple-touch-icon|og:image", "alt": "..."}],
+  "headings": [{"level": 1, "text": "..."}],
+  "links": [{"url": "https://...", "text": "Women", "area": "nav|header|footer|main|other", "sameSite": true}],
+  "text": "visible text of the page (innerText of main, else body), whitespace collapsed",
+  "products": [{"name": "...", "price": "149.90", "currency": "EUR", "image": "https://...", "url": "https://...", "source": "json-ld|microdata|og"}],
+  "jsonLd": [{"@type": "Organization", "name": "..."}],
+  "colors": {
+    "page": {"background": "#f7f5f0", "text": "#1b1d1e"},
+    "links": ["#2a6f97"],
+    "buttons": [{"background": "#1f4e5f", "text": "#ffffff", "label": "Add to cart"}],
+    "header": {"background": "#ffffff", "text": "#1b1d1e"},
+    "footer": {"background": "#1f4e5f", "text": "#ffffff"},
+    "variables": {"--color-primary": "#1f4e5f"}
+  },
+  "fonts": {"body": "Source Sans 3, sans-serif", "headings": "..."},
+  "hasLoginForm": false,
+  "blocked": ["http://169.254.169.254/latest/meta-data/ (private address)"],
+  "timings": {"navigationMs": 1830, "totalMs": 4120}
+}
+```
+- `status`: HTTP status of the main document. A status >= 400 is not an error: you get the metadata and screenshot of
+  the error page.
+- `redirects`: the redirect chain of the main document including the final URL, empty without redirects.
+- All URLs are absolute, without `#fragment`. `links` are deduplicated by URL in document order, only `http(s)`; the
+  `text` is trimmed to 100 characters (falls back to `aria-label`/`title`/`alt` of an image inside); `area` comes from the
+  closest `nav`/`header`/`footer`/`main` (or ARIA role); `sameSite` = same registrable domain as `finalUrl` (last two
+  labels, three for `co.uk`-like second levels).
+- `colors` are **computed** styles as `#rrggbb` (any CSS color syntax; alpha < 0.5 counts as transparent, transparent
+  backgrounds resolve to the first opaque ancestor). `buttons`: up to 8 visible buttons/button-like links, the largest
+  first. `links`: the up to 3 most frequent colors of visible text links in `main`. `variables`: up to 30 custom
+  properties on `:root` whose value is a color, names like `primary`/`brand`/`color` first.
+- `products`: from JSON-LD (`Product`, also inside `@graph`/`ItemList`), microdata and `og:type=product`, up to 30.
+  `jsonLd`: the parsed blocks (invalid ones skipped), each shortened to ~5 KB, up to 10.
+- `hasLoginForm`: the page shows a visible `input[type=password]`.
+- `blocked`: requests Fury refused, with the reason: `private address`, `port`, `scheme`, `media`, `budget`,
+  `connection over 10 MB` (up to 50 entries).
+- `extractError`: only present if the extraction failed. The screenshot, the fields up to `redirects`, `blocked` and
+  `timings` are still there.
+- The whole JSON is kept below ~500 KB (`text`, then `links`, ... are shortened if necessary).
+
+#### Errors
+`{"data": null, "error": "<code>: <message>"}` with one of these codes:
+
+| Code | Meaning |
+|---|---|
+| `invalid` | Missing or invalid `url` |
+| `blocked address` | The URL (or a redirect of it) points to a non-public address or to a port other than 80/443 |
+| `dns` | The host name cannot be resolved |
+| `connect` | The connection failed |
+| `timeout` | No `domcontentloaded` within `timeout`, or the whole request took longer than `TIMEOUT` |
+| `busy` | All slots and the queue are full, or no slot became free before `TIMEOUT` |
+
+### Security model
+Fury usually runs inside a private network (a data center, a cloud VPC, a Kubernetes cluster), and the `/inspect`
+URL is chosen by the caller, possibly on behalf of untrusted users. Without protection, a page could make the browser
+load internal services or the cloud metadata service and leak their content through the screenshot or the metadata
+(server-side request forgery). Everything below applies to `/inspect` only.
+
+- **Separate browser.** `/inspect` has its own Chrome, independent of the browser of the other endpoints. Its default
+  proxy is a dead address, so nothing reaches the network outside an inspect context.
+- **A proxy per request.** Every inspect context sends all its traffic (documents, subresources, workers, WebSockets)
+  through a small proxy inside Fury (`src/InspectProxy.js`, on `127.0.0.1`, random port). The proxy resolves the host
+  itself, refuses it unless **every** address is public and the port is 80 or 443, and then connects to **exactly the
+  checked address**. Chrome never resolves names itself, so DNS rebinding (a second DNS answer pointing to an internal
+  address) does not work. Refused are loopback, private (10/8, 172.16/12, 192.168/16), link-local (169.254/16, the
+  cloud metadata service), CGNAT (100.64/10), 0/8, multicast/reserved and documentation ranges, IPv6 `::1`,
+  `fc00::/7`, `fe80::/10`, multicast, IPv4-mapped/compatible/6to4 forms of the above, NAT64 `64:ff9b::/96` and Teredo.
+- **Request interception** checks every request of the page with the same rules as well (so `blocked` shows full
+  URLs), allows only `http(s)`, `data:` and `blob:`, and aborts `media` (video/audio).
+- **Byte limits** (in the proxy): a connection is closed after 10 MB, an inspect stops after 25 MB in total (further
+  requests are refused, `blocked` gets a `budget` entry). With HTTP/2 one connection carries all requests to a host, so
+  the 10 MB apply per connection rather than per file.
+- **Further restrictions:** WebRTC is limited to the proxy (`--force-webrtc-ip-handling-policy=disable_non_proxied_udp`),
+  service workers are bypassed, downloads and permission prompts denied, popups closed, dialogs dismissed.
+
+**Limits:**
+- **Chrome runs without its sandbox** (`--no-sandbox`, like for the other endpoints). A renderer exploit on a hostile
+  page would run code as the Fury user and could open connections **past the proxy** and read or write
+  `FURY_SAVE_DIR`. Keep Chrome up to date: rebuild and redeploy the image regularly to get Chrome security updates.
+- **Restrict the network as well (defense in depth).** Block egress from the Fury host or container to private ranges
+  and to the metadata service (`169.254.169.254`, `fd00:ec2::254`), except what Fury really needs, e.g. with a
+  Kubernetes NetworkPolicy, firewall rules or security groups. Such rules usually cannot block `localhost` inside the
+  same host or pod; that part relies on the proxy.
+- `FURY_INSPECT_ALLOW_PRIVATE` turns the address checks off (fully or for single `host:port` entries). It is meant for
+  development and tests only; never set it in production.
+
+## Tests
+```bash
+npm test
+```
+Runs the `node:test` suites in `test/`: unit tests for the address check, the proxy (with real sockets), parameters and
+files, and integration tests which start Fury (with puppeteer's Chrome) against local fixture servers.

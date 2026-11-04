@@ -5,7 +5,23 @@ on:
     branches: [ "master" ]
 
 jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install dependencies (downloads Chrome for puppeteer)
+        run: npm ci
+      - name: Run tests
+        run: npm test
+
   docker:
+    # A failing test stops the push of :latest
+    needs: test
     runs-on: ubuntu-latest
 
     steps:

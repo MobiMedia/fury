@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Client side rendered</title></head>
+<body style="margin: 0; background: #ffffff;">
+  <main id="app"></main>
+  <script>
+    setTimeout(() => {
+      document.getElementById("app").innerHTML =
+        '<div id="hero" style="height: 300px; background: #ff0000;"></div><p>Rendered by script</p>';
+    }, 300);
+  </script>
+</body>
+</html>

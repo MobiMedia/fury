@@ -1,0 +1,18 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>Security</title></head>
+<body>
+  <h1>Security</h1>
+  <iframe src="http://127.0.0.1:__SECRET_PORT__/secret-iframe"></iframe>
+  <img src="http://169.254.169.254/latest/meta-data/">
+  <img src="http://localhost:__SECRET_PORT__/secret-img">
+  <script>
+    fetch("http://127.0.0.1:__SECRET_PORT__/secret-fetch").catch(() => {});
+    try {
+      new WebSocket("ws://127.0.0.1:__SECRET_PORT__/secret-ws");
+    } catch (e) {
+      // ignore
+    }
+  </script>
+</body>
+</html>

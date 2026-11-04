@@ -5,6 +5,9 @@ const express = require("express");
 const msgpack = require("@msgpack/msgpack");
 const path = require("path");
 const Utils = require("./src/Utils.js");
+const AddressPolicy = require("./src/AddressPolicy.js");
+const Inspect = require("./src/Inspect.js");
+const InspectBrowser = require("./src/InspectBrowser.js");
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -52,23 +55,66 @@ if (envTimeout) {
   }
 }
 
+// FURY_ENDPOINTS: "render" (default: /screenshot, /pdf, /file), "inspect" (/inspect) or both ("render,inspect")
+const endpoints = new Set((process.env.FURY_ENDPOINTS || "render").split(",").map((entry) => entry.trim()).filter(Boolean));
+const renderEnabled = endpoints.has("render");
+const inspectEnabled = endpoints.has("inspect");
+
+for (const entry of endpoints) {
+  if (entry !== "render" && entry !== "inspect") {
+    console.warn(`Unknown entry "${entry}" in FURY_ENDPOINTS, allowed are "render" and "inspect"`);
+  }
+}
+
 let cluster;
+let inspectManager;
 
-Cluster.launch({
-  concurrency: Cluster.CONCURRENCY_CONTEXT,
-  maxConcurrency: concurrentLimit,
-  puppeteerOptions: BrowserUtils.getPuppeteerParams(),
-  timeout: timeout
-}).then((_cluster) => {
-  cluster = _cluster;
+const parsePositiveInt = (value, defaultValue) => {
+  const number = parseInt(value, 10);
+  return Number.isInteger(number) && number > 0 ? number : defaultValue;
+};
 
+const inspectAllowPrivate = AddressPolicy.parseAllowPrivate(process.env.FURY_INSPECT_ALLOW_PRIVATE);
+const inspectSaveDirMaxAge = parsePositiveInt(process.env.FURY_SAVE_DIR_MAX_AGE, 3600);
+
+const launches = [];
+
+if (renderEnabled) {
+  launches.push(Cluster.launch({
+    concurrency: Cluster.CONCURRENCY_CONTEXT,
+    maxConcurrency: concurrentLimit,
+    puppeteerOptions: BrowserUtils.getPuppeteerParams(),
+    timeout: timeout
+  }).then((_cluster) => {
+    cluster = _cluster;
+  }));
+}
+
+if (inspectEnabled) {
+  if (inspectAllowPrivate.all || inspectAllowPrivate.hosts.size) {
+    console.warn(`WARNING: FURY_INSPECT_ALLOW_PRIVATE is set (${inspectAllowPrivate.all ? "all private addresses" : [...inspectAllowPrivate.hosts].join(", ")}). /inspect may reach private addresses. Never set this in production!`);
+  }
+
+  inspectManager = InspectBrowser.create({
+    concurrency: parsePositiveInt(process.env.CONCURRENT_LIMIT_INSPECT, 2),
+    timeout
+  });
+  launches.push(inspectManager.launch());
+}
+
+Promise.all(launches).then(() => {
   app.listen(port, () => {
-    console.log(`Fury server started at port ${port}`);
+    console.log(`Fury server started at port ${port} (endpoints: ${[...endpoints].join(", ")})`);
   });
 });
 
 process.on("exit", async () => {
-  await cluster.close();
+  if (cluster) {
+    await cluster.close();
+  }
+  if (inspectManager) {
+    await inspectManager.close();
+  }
 });
 
 const gracefulShutdown = () => {
@@ -124,6 +170,53 @@ const createHandler = (functionName, extension) => {
   };
 }
 
-app.post("/screenshot", createHandler("screenshot", "jpeg"));
-app.post("/pdf", createHandler("pdf", "pdf"));
-app.post("/file", createHandler("file", "bin"));
+if (renderEnabled) {
+  app.post("/screenshot", createHandler("screenshot", "jpeg"));
+  app.post("/pdf", createHandler("pdf", "pdf"));
+  app.post("/file", createHandler("file", "bin"));
+}
+
+if (inspectEnabled) {
+  app.post("/inspect", async (req, res) => {
+    // Aborted when the client goes away, so a waiting request leaves the queue
+    const abortController = new AbortController();
+    res.on("close", () => {
+      if (!res.writableEnded) {
+        abortController.abort();
+      }
+    });
+
+    let result;
+
+    try {
+      Utils.log(`Received inspect request for "${req.body?.url}"`);
+
+      if (saveDir) {
+        Inspect.cleanupSaveDir(saveDir, inspectSaveDirMaxAge);
+      }
+
+      const inspected = await Inspect.run(inspectManager, req.body, {
+        signal: abortController.signal,
+        allowPrivate: inspectAllowPrivate
+      });
+
+      if (saveDir) {
+        result = {...await Inspect.writeFiles(saveDir, inspected), error: null};
+      } else {
+        result = {
+          data: {
+            metadata: inspected.metadata,
+            screenshot: req.respondWithMsgPack ? inspected.screenshot : inspected.screenshot.toString("base64")
+          },
+          error: null
+        };
+      }
+    } catch (e) {
+      result = {data: null, error: Utils.getError(e)};
+    } finally {
+      Utils.log(`Finished inspect request for "${req.body?.url}"`);
+    }
+
+    res.send(req.respondWithMsgPack ? Buffer.from(msgpack.encode(result)) : result);
+  });
+}
