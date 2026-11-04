@@ -2,7 +2,7 @@ const {describe, test, before, after} = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("fs");
 const path = require("path");
-const {startFixtureServer, startSecretServer, startFury, post, tempDir, jpegPixel} = require("./helpers.js");
+const {startFixtureServer, startSecretServer, startFury, post, tempDir, jpegPixel, dataUrlPixel} = require("./helpers.js");
 
 // Integration tests: real Fury processes with Chrome against local fixture servers.
 
@@ -72,7 +72,7 @@ describe("/inspect with files (FURY_SAVE_DIR) and an exempt fixture host", () =>
   });
 
   test("metadata of a shop page", async () => {
-    const {metadata, screenshot} = await inspect({url: `${base}/shop.html`});
+    const {response, metadata, screenshot} = await inspect({url: `${base}/shop.html`});
 
     assert.equal(metadata.requestedUrl, `${base}/shop.html`);
     assert.equal(metadata.finalUrl, `${base}/shop.html`);
@@ -89,15 +89,33 @@ describe("/inspect with files (FURY_SAVE_DIR) and an exempt fixture host", () =>
     });
     assert.deepEqual(metadata.alternates, [{hreflang: "en", url: `${base}/en/`}, {hreflang: "de", url: `${base}/de/`}]);
 
-    // Images: visible ones (logo candidates first) and the declared ones
-    assert.deepEqual(metadata.images[0], {
-      url: `${base}/logo.svg`, source: "img", alt: "Nordlicht Shoes", width: 120, height: 40, area: "header",
-      hints: ["logo", "links-home", "above-fold"]
+    // Images: visible ones (logo candidates first) and the declared ones, each with its file next to the JSON
+    const logo = metadata.images[0];
+    assert.deepEqual({...logo, file: undefined, bytes: undefined, x: undefined, y: undefined}, {
+      url: `${base}/logo.svg`, file: undefined, bytes: undefined, rendered: false, source: "img", format: "svg",
+      alt: "Nordlicht Shoes", width: 120, height: 40, naturalWidth: 120, naturalHeight: 40, x: undefined, y: undefined,
+      shape: "landscape", area: "header", visible: true, hints: ["logo", "links-home", "header", "above-fold"],
+      link: `${base}/`, color: null, background: "#ffffff"
     });
+    assert.match(logo.file, /^[0-9a-f-]{36}-image-\d+\.svg$/);
+    assert.deepEqual(fs.readFileSync(path.join(saveDir, logo.file)), fs.readFileSync(path.join(__dirname, "fixtures", "logo.svg")));
+    assert.equal(logo.bytes, fs.statSync(path.join(saveDir, logo.file)).size);
+    assert.ok(Number.isInteger(logo.x) && Number.isInteger(logo.y) && logo.y < 100);
+    assert.ok(response.images.includes(logo.file));
+    for (const image of metadata.images.filter((entry) => entry.file)) {
+      assert.ok(fs.existsSync(path.join(saveDir, image.file)), image.file);
+    }
+
     const instagram = metadata.images.find((image) => image.url === `${base}/instagram.svg`);
     assert.equal(instagram.area, "main");
     assert.equal(instagram.hints.includes("logo"), false);
-    assert.ok(metadata.images.some((image) => image.source === "apple-touch-icon" && image.url === `${base}/apple-touch-icon.png`));
+    assert.equal(instagram.file, null, "404: no file");
+    assert.equal(instagram.link, "https://www.instagram.com/nordlicht");
+
+    // Declared, never loaded by the page: loaded afterwards through the page, the real type comes from the content
+    const touchIcon = metadata.images.find((image) => image.source === "apple-touch-icon" && image.url === `${base}/apple-touch-icon.png`);
+    assert.match(touchIcon.file, /-image-\d+\.png$/);
+    assert.equal(touchIcon.format, "png");
     assert.ok(metadata.images.some((image) => image.source === "icon" && image.url === `${base}/favicon.ico`));
     assert.ok(metadata.images.some((image) => image.source === "og:image" && image.url === `${base}/og.jpg`));
 
@@ -172,6 +190,79 @@ describe("/inspect with files (FURY_SAVE_DIR) and an exempt fixture host", () =>
     assert.equal(pixel.height, 900);
   });
 
+  test("logos: inline SVG, hidden variant, CSS mask, ::before background, sprite, data URL", async () => {
+    const {metadata} = await inspect({url: `${base}/logos.html`});
+    const images = metadata.images;
+    // An inline image is rendered by Fury into a PNG file
+    const pngOf = (image) => {
+      assert.equal(image.url, null);
+      assert.equal(image.rendered, true);
+      assert.equal(image.format, "png");
+      assert.match(image.file, /-image-\d+\.png$/);
+      return `data:image/png;base64,${fs.readFileSync(path.join(saveDir, image.file)).toString("base64")}`;
+    };
+
+    // Inline SVG wordmark: white on the black header, rendered to a PNG (at least 2x, longest side <= 512); color is
+    // the dominant color of the rendering
+    const wordmark = images[0];
+    assert.deepEqual({...wordmark, file: undefined, bytes: undefined, x: undefined, y: undefined}, {
+      url: null, file: undefined, bytes: undefined, rendered: true, source: "svg", format: "png", alt: "Shop Logo",
+      width: 261, height: 73, naturalWidth: null, naturalHeight: null, x: undefined, y: undefined, shape: "landscape",
+      area: "header", visible: true, hints: ["logo", "links-home", "header", "above-fold"], link: `${base}/`,
+      color: "#ffffff", background: "#000000"
+    });
+    assert.equal(wordmark.x, 8);
+    assert.ok(wordmark.y >= 8 && wordmark.y <= 12, String(wordmark.y));
+    const wordmarkPixel = await dataUrlPixel(pngOf(wordmark), 100, 30);
+    assert.equal(wordmarkPixel.width, 512);
+    assert.deepEqual([wordmarkPixel.r, wordmarkPixel.g, wordmarkPixel.b, wordmarkPixel.a], [255, 255, 255, 255]);
+
+    // Hidden square variant: intrinsic size, rendered with the inherited currentColor
+    const square = images.find((image) => image.source === "svg" && image.visible === false);
+    assert.equal(square.width, 124);
+    assert.equal(square.shape, "square");
+    assert.equal(square.color, "#ffffff");
+    assert.ok(square.hints.includes("logo") && square.hints.includes("links-home") && square.hints.includes("header"));
+    const squarePixel = await dataUrlPixel(pngOf(square), 124, 124);
+    assert.deepEqual([squarePixel.r, squarePixel.g, squarePixel.b, squarePixel.a], [255, 255, 255, 255]);
+    const cornerPixel = await dataUrlPixel(pngOf(square), 0, 0);
+    assert.equal(cornerPixel.a, 0, "transparent background");
+
+    // CSS mask in a link to a language start page: URL, the paint color and the background behind it; the hidden
+    // duplicate is not listed
+    const masks = images.filter((image) => image.source === "css-mask");
+    assert.equal(masks.length, 1);
+    assert.deepEqual({...masks[0], file: undefined, bytes: undefined, x: undefined, y: undefined}, {
+      url: `${base}/mask-logo.svg`, file: undefined, bytes: undefined, rendered: false, source: "css-mask", format: "svg",
+      alt: "Mask Shop Zustellung", width: 67, height: 23, naturalWidth: null, naturalHeight: null, x: undefined, y: undefined,
+      shape: "landscape", area: "other", visible: true, hints: ["links-home", "header", "above-fold"], link: `${base}/de-de`,
+      color: "#d40000", background: "#ffffff"
+    });
+    // The mask file as the page loaded it (only the shape; paint it in `color`)
+    assert.deepEqual(fs.readFileSync(path.join(saveDir, masks[0].file)), fs.readFileSync(path.join(__dirname, "fixtures", "mask-logo.svg")));
+
+    // ::before background image of a home link
+    assert.ok(images.some((image) => image.source === "css-background" && image.url === `${base}/logo.svg` && image.hints.includes("logo")));
+
+    // <use> of a sprite symbol outside the svg, painted in currentColor
+    const sprite = images.find((image) => image.source === "svg" && image.color === "#123456");
+    const spritePixel = await dataUrlPixel(pngOf(sprite), sprite.width, sprite.height);
+    assert.deepEqual([spritePixel.r, spritePixel.g, spritePixel.b], [0x12, 0x34, 0x56]);
+
+    // data: URL image in a home link
+    const dataImage = images.find((image) => image.alt === "Data logo");
+    assert.equal(dataImage.source, "img");
+    assert.deepEqual([dataImage.naturalWidth, dataImage.naturalHeight], [4, 4]);
+    const dataPixel = await dataUrlPixel(pngOf(dataImage), 10, 10);
+    assert.deepEqual([dataPixel.r, dataPixel.g, dataPixel.b], [0x1f, 0x4e, 0x5f]);
+
+    // The cart icon is no candidate; a partner logo in the footer ranks below the header logos
+    assert.equal(images.some((image) => image.source === "svg" && image.width === 24), false);
+    const partner = images.findIndex((image) => image.alt === "Payment partner logo");
+    assert.ok(partner > images.indexOf(masks[0]));
+    assert.deepEqual(images[partner].hints.filter((hint) => hint !== "above-fold"), ["logo"]);
+  });
+
   test("a client side rendered page shows up in text and screenshot", async () => {
     const {metadata, screenshot} = await inspect({url: `${base}/csr.html`});
 
@@ -234,10 +325,14 @@ describe("/inspect with files (FURY_SAVE_DIR) and an exempt fixture host", () =>
     assert.deepEqual(metadata.redirects, [`${base}/redirect`, `${base}/simple.html`]);
   });
 
-  test("an exception in the extraction keeps the screenshot", async () => {
-    const {metadata, screenshot} = await inspect({url: `${base}/broken-extract.html`});
-    assert.match(metadata.extractError, /title getter exploded/);
+  test("page scripts cannot tamper with the extraction (isolated world)", async () => {
+    const {metadata, screenshot} = await inspect({url: `${base}/tamper.html`});
+    assert.equal(metadata.extractError, undefined);
+    assert.equal(metadata.title, "Tampered page");
+    assert.equal(metadata.finalUrl, `${base}/tamper.html`);
     assert.equal(metadata.status, 200);
+    assert.deepEqual(metadata.headings, [{level: 1, text: "Page scripts try to tamper with the extraction"}]);
+    assert.deepEqual(metadata.links, [{url: `${base}/elsewhere`, text: "Elsewhere", area: "other", sameSite: true}]);
     assert.ok(screenshot.length > 100);
   });
 
@@ -275,6 +370,22 @@ describe("/inspect inline (without FURY_SAVE_DIR)", () => {
     assert.equal(body.error, null);
     assert.equal(body.data.metadata.title, "Simple");
     assert.deepEqual([...body.data.screenshot.subarray(0, 3)], [0xff, 0xd8, 0xff]);
+  });
+
+  test("images inline: data.images maps metadata.images[].file to the bytes (base64 / msgpack binary)", async () => {
+    const url = `http://127.0.0.1:${fixture.port}/shop.html`;
+    const logoFile = fs.readFileSync(path.join(__dirname, "fixtures", "logo.svg"));
+
+    const {body} = await post(fury.port, "/inspect", {url});
+    const logo = body.data.metadata.images[0];
+    assert.match(logo.file, /^image-\d+\.svg$/);
+    assert.deepEqual(Buffer.from(body.data.images[logo.file], "base64"), logoFile);
+    assert.deepEqual(Object.keys(body.data.images).sort(), body.data.metadata.images.map((image) => image.file).filter(Boolean)
+      .filter((file, index, all) => all.indexOf(file) === index).sort());
+
+    const {body: packed} = await post(fury.port, "/inspect", {url}, {msgpack: true});
+    const packedLogo = packed.data.metadata.images[0];
+    assert.deepEqual(Buffer.from(packed.data.images[packedLogo.file]), logoFile);
   });
 
   test("render endpoints are not served in inspect mode", async () => {

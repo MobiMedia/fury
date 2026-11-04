@@ -27,12 +27,12 @@ There is no linter or type checker configured.
 
 `/inspect` (external, hostile websites; must never affect the render endpoints):
 
-- **`src/Inspect.js`** — The flow: parameter parsing, start URL check, navigation, scroll, screenshot, extraction, result files and their cleanup.
+- **`src/Inspect.js`** — The flow: parameter parsing, start URL check, navigation (image responses are captured), scroll, screenshot, extraction, loading of images the page did not load, image files (type sniffed from content), result files and their cleanup.
 - **`src/InspectBrowser.js`** — The dedicated inspect browser (no puppeteer-cluster), slots with a bounded queue, `InspectError` (`<code>: <message>`).
 - **`src/InspectProxy.js`** — Per-request forward proxy on 127.0.0.1; the enforcement point for private addresses (connects to exactly the checked address, closing DNS rebinding) and byte limits.
 - **`src/AddressPolicy.js`** — Pure address/port rules plus a per-request DNS cache, shared by the proxy and the request interception.
-- **`src/BotProtection.js`** — Informational detection of bot protection / CAPTCHA pages (`metadata.botProtection`); never solves or avoids them.
-- **`src/InspectExtract.js`** — The in-page metadata extraction; runs via `page.evaluate`, so it must stay self-contained.
+- **`src/BotProtection.js`** — Informational detection of bot protection / CAPTCHA pages (`metadata.botProtection`); does not solve or click through challenges. Separately, `InspectBrowser.js` deliberately reduces automation signals (no `--enable-automation`, `AutomationControlled` off, client hints without "HeadlessChrome") so the browser is not blocked merely for being headless.
+- **`src/InspectExtract.js`** — The in-page metadata extraction incl. logo candidates (inline SVG/data images rendered to PNG); runs in an isolated world (`Inspect.evaluateIsolated`, plain CDP), so it must stay self-contained.
 
 ## Key Concepts
 

@@ -202,19 +202,22 @@ if (inspectEnabled) {
 
       if (BrowserUtils.isDebugMode()) {
         // The screenshot itself is not printed, only its size
-        Utils.log(`Inspect result for "${req.body?.url}" (screenshot: ${inspected.screenshot.length} bytes JPEG):\n${JSON.stringify(inspected.metadata, null, 2)}`);
+        const imageBytes = inspected.images.reduce((sum, image) => sum + image.data.length, 0);
+        Utils.log(`Inspect result for "${req.body?.url}" (screenshot: ${inspected.screenshot.length} bytes JPEG, ${inspected.images.length} images: ${imageBytes} bytes):\n${JSON.stringify(inspected.metadata, null, 2)}`);
       }
 
       if (saveDir) {
         result = {...await Inspect.writeFiles(saveDir, inspected), error: null};
         if (BrowserUtils.isDebugMode()) {
-          Utils.log(`Inspect files: ${path.join(saveDir, result.file)}, ${path.join(saveDir, result.screenshot)}`);
+          Utils.log(`Inspect files: ${path.join(saveDir, result.file)}, ${path.join(saveDir, result.screenshot)}, ${result.images.length} images`);
         }
       } else {
         result = {
           data: {
             metadata: inspected.metadata,
-            screenshot: req.respondWithMsgPack ? inspected.screenshot : inspected.screenshot.toString("base64")
+            screenshot: req.respondWithMsgPack ? inspected.screenshot : inspected.screenshot.toString("base64"),
+            // metadata.images[].file -> image bytes
+            images: Object.fromEntries(inspected.images.map((image) => [image.name, req.respondWithMsgPack ? image.data : image.data.toString("base64")]))
           },
           error: null
         };

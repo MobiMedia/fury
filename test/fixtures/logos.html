@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <title>Logo variants</title>
+  <style>
+    body { margin: 0; font-family: sans-serif; background: #ffffff; }
+    /* Like an inline SVG logo in a dark header */
+    .bar { background: #000000; color: #ffffff; display: flex; align-items: center; gap: 16px; padding: 8px; }
+    .bar a { color: inherit; }
+    .hidden { display: none; }
+    /* Like a logo drawn with a CSS mask, painted in the text color */
+    .light { background: #ffffff; color: #d40000; padding: 8px; }
+    .light a { color: inherit; }
+    .home-mark { display: block; width: 67px; height: 23px; background-color: currentColor;
+      -webkit-mask: url('/mask-logo.svg') left / contain no-repeat; mask: url('/mask-logo.svg') left / contain no-repeat; }
+    .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+    .before-logo::before { content: ""; display: inline-block; width: 40px; height: 40px; background-image: url('/logo.svg'); background-size: contain; }
+    .sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
+    .icon path { fill: #00aa00; }
+    /* Keeps the footer below the top 200 px ("header" hint) */
+    main { padding: 40px 8px 120px; }
+  </style>
+</head>
+<body>
+  <svg class="sprite" aria-hidden="true"><symbol id="brand-mark" viewBox="0 0 40 40"><circle cx="20" cy="20" r="18"/></symbol></svg>
+
+  <header class="bar">
+    <a title="Startseite" href="/">
+      <svg width="261" height="73" viewBox="0 0 495 138" aria-label="Shop Logo" data-test-id="logo-de-de"><rect x="0" y="0" width="495" height="138" fill="white"/></svg>
+      <!-- Square variant, only shown on small screens -->
+      <svg class="hidden" width="124" height="124" viewBox="0 0 124 124" data-test-id="logo"><circle cx="62" cy="62" r="60" fill="currentColor"/></svg>
+    </a>
+    <a href="/cart"><svg class="icon" width="24" height="24" viewBox="0 0 24 24"><path d="M0 0h24v24H0z"/></svg></a>
+  </header>
+
+  <div class="light">
+    <a href="/de-de"><span class="sr-only">Mask Shop Zustellung</span><i aria-hidden="true" class="home-mark"></i></a>
+    <div class="hidden"><a href="/de-de"><i aria-hidden="true" class="home-mark"></i></a></div>
+  </div>
+
+  <main>
+    <a href="/" class="before-logo">Start</a>
+    <a href="/"><svg width="40" height="40" class="sprite-logo" style="color: #123456"><use href="#brand-mark" fill="currentColor"/></svg></a>
+    <a href="/"><img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAIAAAAmkwkpAAAAEElEQVR4nGOQ94uHIwbiOABHwwzBuXA+iwAAAABJRU5ErkJggg==" width="32" height="32" alt="Data logo"></a>
+    <p>Inhalt</p>
+  </main>
+
+  <footer>
+    <img src="/logo.svg?partner" alt="Payment partner logo" width="40" height="24">
+  </footer>
+</body>
+</html>

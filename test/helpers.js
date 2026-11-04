@@ -121,26 +121,29 @@ exports.post = async (port, endpoint, body, {msgpack: useMsgpack = false} = {}) 
   return {status: response.status, body: parsed};
 };
 
-// Reads the color of one pixel of a JPEG (decoded by Chrome, no extra dependency)
-exports.jpegPixel = async (jpeg, x, y) => {
+// Reads the color of one pixel of an image data URL (decoded by Chrome, no extra dependency)
+const dataUrlPixel = async (dataUrl, x, y) => {
   const puppeteer = require("puppeteer");
   const browser = await puppeteer.launch({headless: true, args: ["--no-sandbox"]});
 
   try {
     const page = await browser.newPage();
-    return await page.evaluate(async (base64, px, py) => {
+    return await page.evaluate(async (src, px, py) => {
       const image = new Image();
-      image.src = `data:image/jpeg;base64,${base64}`;
+      image.src = src;
       await image.decode();
       const canvas = document.createElement("canvas");
       canvas.width = image.width;
       canvas.height = image.height;
       const context = canvas.getContext("2d");
       context.drawImage(image, 0, 0);
-      const [r, g, b] = context.getImageData(px, py, 1, 1).data;
-      return {r, g, b, width: image.width, height: image.height};
-    }, Buffer.from(jpeg).toString("base64"), x, y);
+      const [r, g, b, a] = context.getImageData(px, py, 1, 1).data;
+      return {r, g, b, a, width: image.width, height: image.height};
+    }, dataUrl, x, y);
   } finally {
     await browser.close();
   }
 };
+
+exports.dataUrlPixel = dataUrlPixel;
+exports.jpegPixel = (jpeg, x, y) => dataUrlPixel(`data:image/jpeg;base64,${Buffer.from(jpeg).toString("base64")}`, x, y);

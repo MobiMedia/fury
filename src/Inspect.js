@@ -24,7 +24,17 @@ const SCROLL_BUDGET = 3000;
 const SETTLE_AFTER_SCROLL = 300;
 const DEFAULT_ACCEPT_LANGUAGE = "de-DE,de;q=0.9,en;q=0.8";
 
-const FILE_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(jpg|json)(\.tmp)?$/;
+// <uuid>.json, <uuid>.jpg (screenshot) and <uuid>-image-<n>.<ext> (images of the page)
+const FILE_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(\.(jpg|json)|-image-\d{1,4}\.(png|jpg|gif|webp|avif|svg|ico|bmp))(\.tmp)?$/;
+
+// Captured image responses
+const MAX_CAPTURED_IMAGES = 300;
+const MAX_IMAGE_BYTES = 10 * MB;
+// Images the page did not load itself (declared icons, sharing images, hidden variants) are loaded afterwards
+const MAX_PRELOAD = 30;
+const PRELOAD_TIMEOUT = 3000;
+// Time kept free before the hard deadline for writing the result
+const DEADLINE_MARGIN = 1500;
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -121,6 +131,193 @@ const evaluateWithRetry = async (page, fn, ...args) => {
   }
 };
 
+// Runs a self-contained function in an isolated world of the main frame: it sees the page's DOM, but not the page's
+// JavaScript, so page scripts cannot tamper with the built-ins the function uses (Array.prototype.map,
+// querySelectorAll, ...) and thereby with its result. Plain CDP, as Puppeteer's own isolated realm is internal API.
+const evaluateIsolated = async (session, fn, arg) => {
+  const run = async () => {
+    const {frameTree} = await session.send("Page.getFrameTree");
+    const {executionContextId} = await session.send("Page.createIsolatedWorld", {
+      frameId: frameTree.frame.id,
+      worldName: "fury-inspect"
+    });
+    const {result, exceptionDetails} = await session.send("Runtime.callFunctionOn", {
+      functionDeclaration: fn.toString(),
+      executionContextId,
+      arguments: arg === undefined ? [] : [{value: arg}],
+      awaitPromise: true,
+      returnByValue: true
+    });
+    if (exceptionDetails) {
+      throw new Error(exceptionDetails.exception?.description || exceptionDetails.text || "evaluation failed");
+    }
+    return result.value;
+  };
+
+  try {
+    return await run();
+  } catch (e) {
+    if (!isContextDestroyed(e)) {
+      throw e;
+    }
+    await sleep(500);
+    return run();
+  }
+};
+
+// Only these keys are taken from the extraction result; everything else of the metadata is set by Fury itself
+const EXTRACTED_KEYS = ["title", "lang", "meta", "alternates", "headings", "links", "text", "images", "forms", "structuredData", "colors", "fonts"];
+const pickExtracted = (extracted) => Object.fromEntries(EXTRACTED_KEYS
+  .filter((key) => extracted && typeof extracted === "object" && Object.prototype.hasOwnProperty.call(extracted, key))
+  .map((key) => [key, extracted[key]]));
+
+const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+const PNG_DATA_URL = /^data:image\/png;base64,([A-Za-z0-9+/]+={0,2})$/;
+const MAX_DATA_URL_LENGTH = 150000;
+
+// Images: `url` only http(s), `dataUrl` only a real PNG (base64, PNG signature, size limit); entries with neither
+// are dropped
+const sanitizeImages = (images) => (Array.isArray(images) ? images : [])
+  .filter((image) => image && typeof image === "object")
+  .map((image) => {
+    const url = typeof image.url === "string" && /^https?:\/\//i.test(image.url) ? image.url : null;
+    let dataUrl = null;
+    const match = typeof image.dataUrl === "string" && image.dataUrl.length <= MAX_DATA_URL_LENGTH ? PNG_DATA_URL.exec(image.dataUrl) : null;
+    if (match) {
+      const bytes = Buffer.from(match[1], "base64");
+      if (bytes.length > PNG_SIGNATURE.length && bytes.subarray(0, PNG_SIGNATURE.length).equals(PNG_SIGNATURE)) {
+        dataUrl = image.dataUrl;
+      }
+    }
+    return {...image, url, dataUrl};
+  })
+  .filter((image) => image.url || image.dataUrl);
+
+// The real type of image bytes, from their content (a server can label anything as image/png). null = not an image
+// format Fury stores.
+const sniffImage = (buffer) => {
+  if (!buffer || buffer.length < 4) {
+    return null;
+  }
+  const ascii = (start, end) => buffer.subarray(start, end).toString("latin1");
+  if (buffer.subarray(0, PNG_SIGNATURE.length).equals(PNG_SIGNATURE)) {
+    return "png";
+  }
+  if (buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
+    return "jpeg";
+  }
+  if (ascii(0, 6) === "GIF87a" || ascii(0, 6) === "GIF89a") {
+    return "gif";
+  }
+  if (ascii(0, 4) === "RIFF" && ascii(8, 12) === "WEBP") {
+    return "webp";
+  }
+  if (ascii(4, 8) === "ftyp" && /^avi[fs]$/.test(ascii(8, 12))) {
+    return "avif";
+  }
+  if (buffer[0] === 0 && buffer[1] === 0 && buffer[2] === 1 && buffer[3] === 0) {
+    return "ico";
+  }
+  if (ascii(0, 2) === "BM") {
+    return "bmp";
+  }
+  // SVG: optional BOM, XML declaration, comments and doctype, then <svg
+  const head = buffer.subarray(0, 4096).toString("utf8").replace(/^﻿/, "");
+  if (/^\s*(<\?xml[^>]*\?>\s*)?((<!--[\s\S]*?-->|<!DOCTYPE[^>]*>)\s*)*<svg[\s>]/i.test(head)) {
+    return "svg";
+  }
+  return null;
+};
+
+const EXTENSIONS = {png: "png", jpeg: "jpg", gif: "gif", webp: "webp", avif: "avif", svg: "svg", ico: "ico", bmp: "bmp"};
+
+// Keeps the bodies of all image responses of the page (also CSS backgrounds/masks and images loaded later), keyed by
+// URL (without fragment; also the URLs of a redirect chain)
+const captureImages = (page) => {
+  const bodies = new Map();
+  let count = 0;
+
+  page.on("response", (response) => {
+    const request = response.request();
+    const url = response.url();
+    const contentType = String(response.headers()["content-type"] || "").toLowerCase();
+    if (response.status() < 200 || response.status() >= 300 || url.startsWith("data:") || url.startsWith("blob:") ||
+      (request.resourceType() !== "image" && !contentType.startsWith("image/")) || count >= MAX_CAPTURED_IMAGES) {
+      return;
+    }
+    count++;
+    const body = response.buffer().then((buffer) => (buffer.length <= MAX_IMAGE_BYTES ? buffer : null), () => null);
+    for (const key of [url, request.url(), ...request.redirectChain().map((previous) => previous.url())]) {
+      const normalized = stripHash(key);
+      if (!bodies.has(normalized)) {
+        bodies.set(normalized, body);
+      }
+    }
+  });
+
+  return {
+    has: (url) => bodies.has(url),
+    // The body, or null if not captured or not complete before `until`
+    get: async (url, until) => {
+      if (!bodies.has(url)) {
+        return null;
+      }
+      return Promise.race([bodies.get(url), sleep(Math.max(until - Date.now(), 0)).then(() => null)]);
+    }
+  };
+};
+
+// Gives every image whose bytes are available a file: the captured response body, or Fury's PNG rendering (dataUrl)
+// of an inline image. Returns the images (with file, bytes, rendered, the sniffed format; without dataUrl) and the
+// file contents. The same URL gets one file.
+const attachImageFiles = async (images, capture, until) => {
+  const files = [];
+  const fileByUrl = new Map();
+
+  const result = [];
+  for (const image of images) {
+    const {dataUrl, ...entry} = image;
+    let file = null;
+    let bytes = null;
+    let format = entry.format;
+    const rendered = Boolean(dataUrl);
+
+    if (rendered) {
+      const data = Buffer.from(dataUrl.slice(dataUrl.indexOf(",") + 1), "base64");
+      file = `image-${files.length + 1}.png`;
+      files.push({name: file, data});
+      bytes = data.length;
+      format = "png";
+    } else if (entry.url && fileByUrl.has(entry.url)) {
+      ({file, bytes, format} = fileByUrl.get(entry.url));
+    } else if (entry.url) {
+      const data = await capture.get(entry.url, until);
+      const sniffed = sniffImage(data);
+      if (sniffed) {
+        file = `image-${files.length + 1}.${EXTENSIONS[sniffed]}`;
+        files.push({name: file, data});
+        bytes = data.length;
+        format = sniffed;
+        fileByUrl.set(entry.url, {file, bytes, format});
+      }
+    }
+
+    result.push({
+      url: entry.url, file, bytes, rendered, source: entry.source, format, alt: entry.alt, width: entry.width,
+      height: entry.height, naturalWidth: entry.naturalWidth ?? null, naturalHeight: entry.naturalHeight ?? null,
+      x: entry.x ?? null, y: entry.y ?? null, shape: entry.shape, area: entry.area, visible: entry.visible,
+      hints: entry.hints, link: entry.link ?? null, color: entry.color, background: entry.background
+    });
+  }
+
+  return {images: result, files};
+};
+
+exports.pickExtracted = pickExtracted;
+exports.sanitizeImages = sanitizeImages;
+exports.sniffImage = sniffImage;
+exports.attachImageFiles = attachImageFiles;
+
 // Keeps the metadata JSON below ~500 KB by shortening the biggest parts step by step
 const capMetadata = (metadata) => {
   const size = () => Buffer.byteLength(JSON.stringify(metadata));
@@ -140,8 +337,9 @@ const capMetadata = (metadata) => {
   return metadata;
 };
 
-const inspectPage = async ({context, proxy, checker, params, userAgent, userAgentMetadata, platform, blocked, addBlocked, startedAt}) => {
+const inspectPage = async ({context, proxy, checker, params, userAgent, userAgentMetadata, platform, blocked, addBlocked, startedAt, deadline}) => {
   const page = await context.newPage();
+  const capture = captureImages(page);
 
   // Popups the page opens are closed right away (they would use the same proxy, but nobody needs them)
   context.on("targetcreated", async (target) => {
@@ -339,9 +537,29 @@ const inspectPage = async ({context, proxy, checker, params, userAgent, userAgen
   let extractError = null;
 
   try {
-    extracted = await evaluateWithRetry(page, InspectExtract.extractPageData, {maxLinks: params.maxLinks, maxText: params.maxText});
+    extracted = pickExtracted(await evaluateIsolated(identitySession, InspectExtract.extractPageData, {maxLinks: params.maxLinks, maxText: params.maxText}));
+    if ("images" in extracted) {
+      extracted.images = sanitizeImages(extracted.images);
+    }
   } catch (e) {
     extractError = e?.message || String(e);
+  }
+
+  // 5. Image files: what the page loaded is already captured; images it did not load itself are loaded now (within
+  // the time left before the deadline)
+  let imageFiles = [];
+  if (extracted.images?.length) {
+    const until = deadline - DEADLINE_MARGIN;
+    const missing = [...new Set(extracted.images.filter((image) => image.url && !capture.has(image.url)).map((image) => image.url))].slice(0, MAX_PRELOAD);
+    const preloadTimeout = Math.min(PRELOAD_TIMEOUT, until - Date.now() - 500);
+    if (missing.length && preloadTimeout > 0) {
+      await evaluateIsolated(identitySession, InspectExtract.preloadImages, {urls: missing, timeout: preloadTimeout}).catch((e) => {
+        Utils.log(`Inspect: loading images failed: ${e.message}`);
+      });
+    }
+    const attached = await attachImageFiles(extracted.images, capture, until);
+    extracted.images = attached.images;
+    imageFiles = attached.files;
   }
 
   // Bot protection / CAPTCHA (informational), independent of the extraction
@@ -350,7 +568,7 @@ const inspectPage = async ({context, proxy, checker, params, userAgent, userAgen
     botProtection = BotProtection.detect({
       status: response ? response.status() : null,
       headers: response ? response.headers() : {},
-      page: await evaluateWithRetry(page, BotProtection.collectPageSignals).catch(() => null)
+      page: await evaluateIsolated(identitySession, BotProtection.collectPageSignals).catch(() => null)
     });
   } catch (e) {
     Utils.log(`Inspect: bot protection detection failed: ${e.message}`);
@@ -358,6 +576,7 @@ const inspectPage = async ({context, proxy, checker, params, userAgent, userAgen
 
   const redirectChain = response ? response.request().redirectChain().map((request) => stripHash(request.url())) : [];
 
+  // `extracted` holds only the EXTRACTED_KEYS, so it cannot overwrite the fields Fury sets itself
   const metadata = {
     requestedUrl: params.url,
     finalUrl: stripHash(page.url()),
@@ -385,7 +604,10 @@ const inspectPage = async ({context, proxy, checker, params, userAgent, userAgen
     metadata.extractError = extractError;
   }
 
-  return {metadata: capMetadata(metadata), screenshot};
+  const cappedMetadata = capMetadata(metadata);
+  // Files of images that capMetadata removed are not returned
+  const referenced = new Set((cappedMetadata.images || []).map((image) => image.file).filter(Boolean));
+  return {metadata: cappedMetadata, screenshot, images: imageFiles.filter((file) => referenced.has(file.name))};
 };
 
 /**
@@ -394,7 +616,7 @@ const inspectPage = async ({context, proxy, checker, params, userAgent, userAgen
  * @param {object} options
  * @param {AbortSignal} options.signal - aborted when the client went away
  * @param {object} options.allowPrivate - AddressPolicy.parseAllowPrivate() result
- * @returns {Promise<{metadata: object, screenshot: Buffer}>}
+ * @returns {Promise<{metadata: object, screenshot: Buffer, images: Array<{name: string, data: Buffer}>}>}
  */
 exports.run = async (manager, body, {signal, allowPrivate}) => {
   const startedAt = Date.now();
@@ -438,7 +660,7 @@ exports.run = async (manager, body, {signal, allowPrivate}) => {
     });
 
     const job = inspectPage({
-      context, proxy, checker, params, blocked, addBlocked, startedAt,
+      context, proxy, checker, params, blocked, addBlocked, startedAt, deadline,
       userAgent: manager.getUserAgent(),
       userAgentMetadata: manager.getUserAgentMetadata(),
       platform: manager.getPlatform()
@@ -460,9 +682,12 @@ exports.run = async (manager, body, {signal, allowPrivate}) => {
 };
 
 // Writes <id>.jpg and <id>.json (via a temporary name, so a reader never sees a half written file)
-exports.writeFiles = async (saveDir, {metadata, screenshot}) => {
+// <id>.jpg, <id>-image-<n>.<ext> and, last, <id>.json: when the JSON exists, every file it names exists too.
+// metadata.images[].file is changed to the file name in the directory.
+exports.writeFiles = async (saveDir, {metadata, screenshot, images = []}) => {
   const id = crypto.randomUUID();
-  const files = {screenshot: `${id}.jpg`, file: `${id}.json`};
+  const imageName = (name) => `${id}-${name}`;
+  const files = {screenshot: `${id}.jpg`, file: `${id}.json`, images: images.map((image) => imageName(image.name))};
 
   const write = async (name, data) => {
     const target = path.join(saveDir, name);
@@ -471,7 +696,14 @@ exports.writeFiles = async (saveDir, {metadata, screenshot}) => {
   };
 
   await write(files.screenshot, screenshot);
-  await write(files.file, JSON.stringify(metadata));
+  for (const image of images) {
+    await write(imageName(image.name), image.data);
+  }
+
+  const saved = Array.isArray(metadata.images)
+    ? {...metadata, images: metadata.images.map((image) => (image.file ? {...image, file: imageName(image.file)} : image))}
+    : metadata;
+  await write(files.file, JSON.stringify(saved));
 
   return files;
 };

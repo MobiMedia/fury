@@ -1,7 +1,9 @@
-// Recognizes bot protection / CAPTCHA pages for /inspect. Informational only: Fury never tries to solve or avoid a
-// challenge, it only tells the caller that the page it got is (or contains) one.
+// Recognizes bot protection / CAPTCHA pages for /inspect. Informational only: Fury does not solve or click through a
+// challenge, it only tells the caller that the page it got is (or contains) one. (Separately, InspectBrowser reduces
+// the automation signals of the browser so it is not blocked merely for being headless - see README "Bot protection".)
 
-// Collected inside the page (must stay self-contained, runs via page.evaluate)
+// Collected inside the page (must stay self-contained). Runs in an isolated world: page JavaScript globals are not
+// visible there, so everything is read from the DOM.
 exports.collectPageSignals = () => {
   const safe = (fn, fallback) => {
     try {
@@ -19,7 +21,9 @@ exports.collectPageSignals = () => {
     sources: safe(() => Array.from(document.querySelectorAll("script[src], iframe[src]")).map((el) => el.src).slice(0, 200), []),
     markers: {
       pxCaptcha: has("#px-captcha"),
-      pxGlobal: safe(() => typeof window._pxAppId !== "undefined", false),
+      // The PerimeterX snippet sets window._pxAppId in an inline script
+      pxGlobal: safe(() => Array.from(document.querySelectorAll("script:not([src])")).slice(0, 100)
+        .some((el) => String(el.textContent || "").slice(0, 50000).includes("_pxAppId")), false),
       cloudflareChallenge: has("#challenge-form, #challenge-running, #challenge-stage, #cf-challenge-running, .cf-browser-verification"),
       turnstile: has(".cf-turnstile, iframe[src*='challenges.cloudflare.com']"),
       recaptcha: has(".g-recaptcha, iframe[src*='google.com/recaptcha'], iframe[src*='recaptcha.net']"),
@@ -63,7 +67,7 @@ exports.detect = ({status, headers = {}, page}) => {
     add("perimeterx", [
       markers.pxCaptcha && "#px-captcha",
       /px-captcha/i.test(signals.description) && "meta description px-captcha",
-      markers.pxGlobal && "window._pxAppId",
+      markers.pxGlobal && "_pxAppId script",
       /px-cdn\.net|px-cloud\.net|perimeterx\.net|\/px\/client\/main\.min\.js/.test(sources) && "PerimeterX script"
     ], captcha || (blockingStatus && /access to this page has been denied/i.test(title)));
   }

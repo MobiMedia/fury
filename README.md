@@ -190,20 +190,22 @@ curl -s localhost:3100/inspect -H 'Content-Type: application/json' -d '{"url":"h
 Without `FURY_SAVE_DIR`, the result is returned inline, the screenshot base64 encoded (binary with
 [MessagePack](#messagepack)):
 ```json
-{"data": {"metadata": {...}, "screenshot": "/9j/4AAQ..."}, "error": null}
+{"data": {"metadata": {...}, "screenshot": "/9j/4AAQ...", "images": {"image-1.svg": "PHN2Zy...", "image-2.png": "iVBORw0..."}}, "error": null}
 ```
+`images` maps `metadata.images[].file` to the image bytes (base64; binary with MessagePack).
 
-With `FURY_SAVE_DIR`, Fury writes two files and only returns their names. This avoids sending the image over HTTP when
+With `FURY_SAVE_DIR`, Fury writes the files and only returns their names. This avoids sending the images over HTTP when
 the caller can read the directory (e.g. a shared volume):
 ```json
-{"file": "<id>.json", "screenshot": "<id>.jpg", "error": null}
+{"file": "<id>.json", "screenshot": "<id>.jpg", "images": ["<id>-image-1.svg", "<id>-image-2.png"], "error": null}
 ```
 - `<id>.jpg`: the screenshot
-- `<id>.json`: the metadata (UTF-8)
+- `<id>-image-<n>.<ext>`: the images of the page, referenced by `metadata.images[].file`
+- `<id>.json`: the metadata (UTF-8), written last: when it exists, all files it names exist too
 
 `<id>` is a random UUID. The files are written under a temporary name and renamed, so they are complete when the
-response arrives. The caller is expected to delete them after reading; as a safety net, Fury deletes `/inspect` files
-older than `FURY_SAVE_DIR_MAX_AGE` (other files in the directory are never touched).
+response arrives. The caller is expected to delete them after reading (`images` lists the image files); as a safety net,
+Fury deletes `/inspect` files older than `FURY_SAVE_DIR_MAX_AGE` (other files in the directory are never touched).
 
 #### Metadata
 ```json
@@ -220,8 +222,22 @@ older than `FURY_SAVE_DIR_MAX_AGE` (other files in the directory are never touch
   "links": [{"url": "https://...", "text": "Women", "area": "nav|header|footer|main|other", "sameSite": true}],
   "text": "visible text of the page (innerText of main, else body), whitespace collapsed",
   "images": [
-    {"url": "https://.../logo.svg", "source": "img", "alt": "...", "width": 120, "height": 40, "area": "header", "hints": ["logo", "links-home", "above-fold"]},
-    {"url": "https://.../apple-touch-icon.png", "source": "apple-touch-icon", "alt": "", "width": 180, "height": 180, "area": null, "hints": []}
+    {"url": null, "file": "image-1.png", "bytes": 5120, "rendered": true, "source": "svg", "format": "png",
+     "alt": "Shop Logo", "width": 261, "height": 73, "naturalWidth": null, "naturalHeight": null, "x": 24, "y": 12,
+     "shape": "landscape", "area": "header", "visible": true, "hints": ["logo", "links-home", "header", "above-fold"],
+     "link": "https://shop.example.com/", "color": "#ffffff", "background": "#000000"},
+    {"url": "https://.../logo-mask.svg", "file": "image-2.svg", "bytes": 2048, "rendered": false, "source": "css-mask",
+     "format": "svg", "alt": "Shop home", "width": 67, "height": 23, "naturalWidth": null, "naturalHeight": null,
+     "x": 686, "y": 20, "shape": "landscape", "area": "header", "visible": true, "hints": ["links-home", "header", "above-fold"],
+     "link": "https://shop.example.com/de-de", "color": "#000000", "background": "#ffffff"},
+    {"url": "https://.../p/boot.jpg", "file": "image-3.jpg", "bytes": 48213, "rendered": false, "source": "img",
+     "format": "jpeg", "alt": "Fjord Boot", "width": 300, "height": 300, "naturalWidth": 800, "naturalHeight": 800,
+     "x": 40, "y": 620, "shape": "square", "area": "main", "visible": true, "hints": [],
+     "link": "https://shop.example.com/p/fjord-boot", "color": null, "background": "#ffffff"},
+    {"url": "https://.../apple-touch-icon.png", "file": "image-4.png", "bytes": 3311, "rendered": false,
+     "source": "apple-touch-icon", "format": "png", "alt": "", "width": 180, "height": 180, "naturalWidth": null,
+     "naturalHeight": null, "x": null, "y": null, "shape": "square", "area": null, "visible": null, "hints": [],
+     "link": null, "color": null, "background": null}
   ],
   "forms": [
     {"action": "https://.../login", "method": "post", "area": "main", "submit": "Sign in",
@@ -258,12 +274,46 @@ older than `FURY_SAVE_DIR_MAX_AGE` (other files in the directory are never touch
   backgrounds resolve to the first opaque ancestor). `buttons`: up to 8 visible buttons/button-like links, the largest
   first. `links`: the up to 3 most frequent colors of visible text links in `main`. `variables`: up to 30 custom
   properties on `:root` whose value is a color, names like `primary`/`brand`/`color` first.
-- `images`: up to 50, first the visible images (at least 16x16 px; logo candidates first, then the largest), then the
-  images the page declares. `source`: `img`, `icon`, `apple-touch-icon`, `mask-icon`, `og:image` or `twitter:image`.
-  `width`/`height`: rendered size of visible images, the `sizes` of icons, otherwise `null`. `area`: page region like
-  for links (`null` for declared images). `hints` are observations, not conclusions: `logo` (the image or a close
-  ancestor mentions "logo"/"brand" in id, class, alt or file name), `links-home` (inside a link to the start page),
-  `above-fold` (visible without scrolling).
+- `images`: up to 120, and **the images themselves** as files (see [Response](#response)): no need to download
+  anything (a second download would also run into the bot protection). First the page images (up to 100, at least
+  16x16 px): every visible `<img>`, CSS background images on the page, and the logo candidates found inside links to
+  the start page and inside elements named like a logo (also inline SVG, CSS masks and hidden responsive variants,
+  e.g. a square logo shown only on mobile). Ordered by the hints (logo candidates first), then by size. Then the
+  images the page declares (icons, sharing images).
+  - `url`: absolute `http(s)` URL of the image, `null` for an inline image (inline `<svg>`, `data:` URL).
+  - `file`: the image file (with `FURY_SAVE_DIR` the file name in the directory, otherwise the key in `data.images`),
+    `null` if Fury has no bytes for it (failed to load, not an image, over the byte limits). Several entries with the
+    same URL share one file. `bytes`: its size.
+  - The files are **exactly what the site served** (the browser's own responses; images the page did not load itself,
+    like `apple-touch-icon`, `og:image` or a hidden variant, are loaded through the page afterwards). Only real image
+    formats are stored: the type is detected from the content, not from the server's `Content-Type`.
+  - `rendered: true`: the file is Fury's PNG rendering of an inline logo candidate (transparent background, at least
+    twice the CSS size, longest side at most 512 px).
+  - `source`: where the image comes from: `img`, `svg` (inline SVG), `css-background`, `css-mask`, `object`
+    (`<object>`/`<embed>`), or for declared images `icon`, `apple-touch-icon`, `mask-icon`, `og:image`,
+    `twitter:image`.
+  - `format`: format of the `file` (detected from its content): `svg`, `png`, `jpeg`, `gif`, `webp`, `avif`, `ico`,
+    `bmp`; without a file the format guessed from the URL, or `null`. **SVG files are the site's original and may
+    contain scripts**: rasterize or sanitize them before serving them from your own domain.
+  - **`css-mask`** and **`mask-icon`**: the image is only a shape. The site paints it in `color`, so render it as a
+    mask filled with `color`.
+  - `alt`: `alt`, `aria-label`, `title` (or an SVG `<title>`), otherwise the label or text of the surrounding link.
+  - `width`/`height`: rendered size in CSS px; for hidden images the intrinsic size (`width`/`height` attributes,
+    `viewBox`, natural size); for declared images their `sizes`, otherwise `null`. `naturalWidth`/`naturalHeight`:
+    pixel size of an `<img>`'s image, otherwise `null`. `shape`: `landscape` (ratio >= 1.3), `portrait` (<= 0.77),
+    `square` (in between) or `null`.
+  - `x`/`y`: top left corner in page coordinates (CSS px, top left of the page is 0/0), `null` if not visible.
+  - `area`: page region like for links (`null` for declared images). `visible`: shown in the inspected viewport
+    (`false` for hidden variants, `null` for declared images). `link`: URL of the surrounding link (e.g. a product
+    page), otherwise `null`.
+  - `hints` are observations, not conclusions: `logo` (the element or a close ancestor up to the link mentions
+    "logo", "wordmark" or "signet" in a name, label, `data-*` attribute or file name, or "brand" as a class/id part
+    like `navbar-brand`), `links-home` (inside a link to the start page, also a language start page like `/de-de`),
+    `header` (inside `header`/`[role=banner]` or in the top 200 px), `above-fold` (visible without scrolling).
+  - `color`: the color the image is painted in: the fill color of a `css-mask` or `mask-icon`, and for a `rendered`
+    image the dominant color of the rendering; otherwise `null`. `background`: the background color behind the image on the page (first opaque ancestor),
+    `null` for declared images. A white logo on a black header has `"color": "#ffffff", "background": "#000000"`:
+    show it on a dark background.
 - `forms`: up to 10 forms with visible fields. `action` is absolute (a form without `action` submits to the page
   itself), `method` lower case. `fields`: up to 20 visible fields (no hidden fields, buttons or values), `type` is the
   input type or `select`/`textarea`, `label` from `<label>`, `aria-label`, `placeholder` or `title`. `submit`: label of
@@ -293,7 +343,8 @@ older than `FURY_SAVE_DIR_MAX_AGE` (other files in the directory are never touch
   `connection over 10 MB` (up to 50 entries).
 - `extractError`: only present if the extraction failed. The screenshot, the fields up to `redirects`, `blocked` and
   `timings` are still there.
-- The whole JSON is kept below ~500 KB (`text`, then `links`, ... are shortened if necessary).
+- The whole JSON is kept below ~500 KB (`text`, then `links`, ... are shortened if necessary). The image files count
+  towards the byte limits of the page (10 MB per connection, 25 MB per inspect), not towards the JSON.
 
 #### Errors
 `{"data": null, "error": "<code>: <message>"}` with one of these codes:
@@ -310,7 +361,8 @@ older than `FURY_SAVE_DIR_MAX_AGE` (other files in the directory are never touch
 ### Bot protection
 Many sites sit behind bot protection (PerimeterX/HUMAN, Cloudflare, DataDome, Akamai, ...) which blocks headless
 browsers with a CAPTCHA or an "access denied" page, while a regular Chrome gets through. Fury's `/inspect` browser
-therefore presents itself like the regular Chrome it is built from, without inventing anything:
+therefore **deliberately reduces the signals that mark it as an automated browser**, so that it is not blocked merely
+for being headless. It presents itself like the regular Chrome it is built from, without inventing anything:
 
 - the User-Agent and the client hints (`sec-ch-ua*`, `navigator.userAgentData`) say `Chrome`/`Google Chrome` instead
   of `HeadlessChrome`; all other values (version, platform, architecture) are the real ones
@@ -324,6 +376,9 @@ fake fingerprints (WebGL, canvas, fonts, plugins) and it does not hide that it i
 Whether a site lets Fury in also depends on things outside Fury: the reputation of the IP address (data center ranges
 are often blocked outright), the request rate, and the fact that every `/inspect` starts without cookies, so a site
 sees a first-time visitor each time. If a page is a challenge, the metadata says so in `botProtection`.
+
+Whether inspecting a site this way is in line with its terms of service is the responsibility of the operator and the
+caller, not something Fury can decide.
 
 ### Security model
 Fury usually runs inside a private network (a data center, a cloud VPC, a Kubernetes cluster), and the `/inspect`
@@ -345,6 +400,11 @@ load internal services or the cloud metadata service and leak their content thro
 - **Byte limits** (in the proxy): a connection is closed after 10 MB, an inspect stops after 25 MB in total (further
   requests are refused, `blocked` gets a `budget` entry). With HTTP/2 one connection carries all requests to a host, so
   the 10 MB apply per connection rather than per file.
+- **Extraction in an isolated world.** The metadata is read in a separate JavaScript world of the page (it shares the
+  DOM, not the page's scripts), so a page cannot tamper with the built-ins the extraction uses. Only the known
+  metadata keys are taken from it; `requestedUrl`, `finalUrl`, `status`, `redirects`, `blocked` and `timings` are
+  always set by Fury. Image files are only stored if their content is a real image format, and Fury's own renderings
+  are checked to be PNGs.
 - **Further restrictions:** WebRTC is limited to the proxy (`--force-webrtc-ip-handling-policy=disable_non_proxied_udp`),
   service workers are bypassed, downloads and permission prompts denied, popups closed, dialogs dismissed.
 
