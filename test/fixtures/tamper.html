@@ -1,0 +1,15 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>Tampered page</title></head>
+<body>
+  <h1>Page scripts try to tamper with the extraction</h1>
+  <a href="/elsewhere">Elsewhere</a>
+  <script>
+    // None of this reaches the extraction: it runs in an isolated world
+    Object.defineProperty(document, "title", {get() { throw new Error("title getter exploded"); }});
+    Array.prototype.map = () => [{url: "https://evil.example/", text: "spoofed"}];
+    Document.prototype.querySelectorAll = () => [];
+    window.finalUrl = "https://evil.example/";
+  </script>
+</body>
+</html>

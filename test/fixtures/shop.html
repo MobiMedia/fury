@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <title>Nordlicht Shoes – Schuhe aus dem Norden</title>
+  <meta name="description" content="Handgemachte Schuhe aus Hamburg.">
+  <meta name="theme-color" content="rgb(31, 78, 95)">
+  <meta property="og:site_name" content="Nordlicht Shoes">
+  <meta property="og:type" content="website">
+  <meta property="og:image" content="/og.jpg">
+  <meta name="twitter:card" content="summary">
+  <link rel="canonical" href="/de/#top">
+  <link rel="alternate" hreflang="en" href="/en/">
+  <link rel="alternate" hreflang="de" href="/de/">
+  <link rel="icon" href="/favicon.ico">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <style>
+    :root {
+      --color-primary: #1f4e5f;
+      --brand-accent: rgb(42, 111, 151);
+      --spacing: 4px;
+      --tw-channels: 255 0 0;
+    }
+    body { margin: 0; background: #f7f5f0; color: #1b1d1e; font-family: "Source Sans 3", sans-serif; }
+    h1 { font-family: Georgia, serif; }
+    /* The header itself is transparent, the wrapper gives the color */
+    .top { background: #ffffff; }
+    header { background: transparent; color: #1b1d1e; padding: 8px; }
+    header a { color: #1b1d1e; }
+    main { padding: 16px; }
+    main a { color: #2a6f97; }
+    main a.btn-primary { display: inline-block; background: #1f4e5f; color: #ffffff; padding: 16px 48px; }
+    footer { background: #1f4e5f; color: #ffffff; padding: 16px; }
+    footer a { color: #ffffff; }
+  </style>
+  <script type="application/ld+json">{"@context": "https://schema.org", "@type": "Organization", "name": "Nordlicht Shoes GmbH", "url": "https://www.nordlicht-shoes.de"}</script>
+  <script type="application/ld+json">{"@context": "https://schema.org", "@type": "Product", "name": "Fjord Boot", "image": ["/img/fjord.jpg"], "url": "/p/fjord-boot", "offers": {"@type": "Offer", "price": "149.90", "priceCurrency": "EUR"}}</script>
+  <script type="application/ld+json">{ this is not json</script>
+</head>
+<body>
+  <div class="top">
+    <header>
+      <a href="/" class="logo"><img src="/logo.svg" alt="Nordlicht Shoes" width="120" height="40"></a>
+      <nav>
+        <a href="/women">Women</a>
+        <a href="/men">Men</a>
+        <a href="/men#sizes">Men (sizes)</a>
+      </nav>
+    </header>
+  </div>
+  <main>
+    <h1>Schuhe aus dem Norden</h1>
+    <h2>Neu eingetroffen</h2>
+    <p>Robuste Stiefel, handgemacht in Hamburg.</p>
+    <div itemscope itemtype="https://schema.org/Product">
+      <span itemprop="name">Fjord Boot</span>
+      <div itemprop="offers" itemscope itemtype="https://schema.org/Offer">
+        <meta itemprop="price" content="149.90">
+        <meta itemprop="priceCurrency" content="EUR">
+      </div>
+    </div>
+    <a href="/p/fjord-boot">Fjord Boot</a>
+    <a href="/women">Women again</a>
+    <a href="mailto:info@nordlicht-shoes.de">Mail</a>
+    <a href="tel:+4940123456">Call</a>
+    <a href="javascript:void(0)">Script</a>
+    <a href="https://www.instagram.com/nordlicht"><img src="/instagram.svg" alt="Instagram" width="24" height="24"></a>
+    <a href="/sale" class="btn-primary">Zum Sale</a>
+    <form method="POST" action="/login">
+      <label for="user">E-Mail</label>
+      <input type="text" id="user" name="user">
+      <input type="password" name="password" placeholder="Passwort" required>
+      <input type="hidden" name="csrf" value="x">
+      <button type="submit">Anmelden</button>
+    </form>
+  </main>
+  <footer>
+    <a href="/impressum">Impressum</a>
+  </footer>
+</body>
+</html>

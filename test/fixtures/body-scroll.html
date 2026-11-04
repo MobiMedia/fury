@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <title>Body scroll container</title>
+  <style>
+    /* html does not scroll, body does */
+    html { height: 100%; overflow: hidden; }
+    body { height: 100%; margin: 0; overflow-y: auto; background: #ffffff; }
+    .spacer { height: 2500px; }
+    .bottom { height: 500px; background: #0000ff; }
+  </style>
+</head>
+<body>
+  <div class="spacer">Oben</div>
+  <div class="bottom">Unten</div>
+</body>
+</html>

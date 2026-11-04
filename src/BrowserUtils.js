@@ -66,7 +66,7 @@ exports.getPuppeteerParams = () => {
       devtools: debug,
       args: ["--no-sandbox", "--no-zygote"],
       protocolTimeout: envProtocolTimeout,
-      ignoreHTTPSErrors: true
+      acceptInsecureCerts: true
     };
 
   if (process.env.PUPPETEER_EXECUTABLE_PATH) {

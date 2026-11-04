@@ -1,4 +1,4 @@
-FROM amd64/node:20-slim
+FROM amd64/node:24-bookworm-slim
 
 ENV DEBIAN_FRONTEND noninteractive
 ENV LANG en_US.UTF-8
@@ -10,7 +10,7 @@ RUN echo "deb http://deb.debian.org/debian bookworm contrib" > /etc/apt/sources.
      && wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | gpg --dearmor -o /usr/share/keyrings/googlechrome-linux-keyring.gpg \
      && sh -c 'echo "deb [arch=amd64 signed-by=/usr/share/keyrings/googlechrome-linux-keyring.gpg] https://dl-ssl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google.list' \
      && apt-get update \
-     && apt-get install -y google-chrome-stable fonts-ipafont-gothic fonts-wqy-zenhei fonts-thai-tlwg fonts-kacst fonts-freefont-ttf libxss1 dbus dbus-x11 ttf-mscorefonts-installer fontconfig fonts-noto fonts-dejavu fonts-liberation --no-install-recommends \
+     && apt-get install -y google-chrome-stable fonts-ipafont-gothic fonts-wqy-zenhei fonts-thai-tlwg fonts-kacst fonts-freefont-ttf libxss1 dbus dbus-x11 ttf-mscorefonts-installer fontconfig fonts-noto fonts-dejavu fonts-liberation unzip --no-install-recommends \
      && rm -rf /var/lib/apt/lists/* /opt/google \
      && fc-cache -f
 
@@ -25,7 +25,11 @@ COPY --chown=fury .fonts.conf ./
 
 ENV DBUS_SESSION_BUS_ADDRESS autolaunch:
 
-RUN npm ci
+# The Chrome of puppeteer is installed explicitly: npm >= 11 does not run install scripts by default.
+# (google-chrome-stable above is only installed for its system libraries, /opt/google is removed again.
+# @puppeteer/browsers extracts the Chrome zip with the system `unzip`.)
+RUN npm ci \
+     && npx puppeteer browsers install chrome
 
 COPY . .
 
