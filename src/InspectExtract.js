@@ -49,6 +49,29 @@ exports.extractPageData = async (options) => {
     return style.visibility !== "hidden" && style.display !== "none" && parseFloat(style.opacity) > 0;
   };
 
+  // The DOM does not change during the extraction: computed styles, boxes and visibility are cached per element
+  const styleCache = new Map();
+  const styleOf = (el) => {
+    if (!styleCache.has(el)) {
+      styleCache.set(el, getComputedStyle(el));
+    }
+    return styleCache.get(el);
+  };
+  const rectCache = new Map();
+  const rectOf = (el) => {
+    if (!rectCache.has(el)) {
+      rectCache.set(el, el.getBoundingClientRect());
+    }
+    return rectCache.get(el);
+  };
+  const visibleCache = new Map();
+  const visible = (el) => {
+    if (!visibleCache.has(el)) {
+      visibleCache.set(el, isVisible(el));
+    }
+    return visibleCache.get(el);
+  };
+
   // Registrable domain: last two labels, three for "co.uk"-like second levels
   const registrableDomain = (hostname) => {
     const labels = hostname.toLowerCase().replace(/\.$/, "").split(".");
@@ -98,7 +121,7 @@ exports.extractPageData = async (options) => {
   // Background of an element, transparent backgrounds resolve to the first opaque ancestor
   const effectiveBackground = (el) => {
     for (let current = el; current && current.nodeType === 1; current = current.parentElement) {
-      const color = toHex(getComputedStyle(current).backgroundColor);
+      const color = toHex(styleOf(current).backgroundColor);
       if (color) {
         return color;
       }
@@ -157,39 +180,25 @@ exports.extractPageData = async (options) => {
 
   const buttonCandidates = Array.from(document.querySelectorAll(
     "button, input[type=submit], input[type=button], [role=button], a[class*=btn i], a[class*=button i], a[class*=cta i]"
-  )).slice(0, MAX_SCAN);
+  )).slice(0, MAX_SCAN).filter(visible);
 
-  const buttons = [];
-  const seenButtons = new Set();
-  buttonCandidates
-    .filter(isVisible)
-    .map((el) => {
-      const rect = el.getBoundingClientRect();
-      return {el, area: rect.width * rect.height};
-    })
-    .sort((a, b) => b.area - a.area)
-    .forEach(({el}) => {
-      if (buttons.length >= 8) {
-        return;
-      }
-      const entry = {background: effectiveBackground(el), text: toHex(getComputedStyle(el).color), label: labelOf(el)};
-      const key = `${entry.background}|${entry.text}|${entry.label}`;
-      if (!seenButtons.has(key)) {
-        seenButtons.add(key);
-        buttons.push(entry);
-      }
-    });
-
-  const linkColorCounts = new Map();
-  Array.from((main || document.body || document.documentElement).querySelectorAll("a[href]"))
-    .slice(0, MAX_SCAN)
-    .filter((el) => collapse(el.innerText) && isVisible(el))
-    .forEach((el) => {
-      const color = toHex(getComputedStyle(el).color);
-      if (color) {
-        linkColorCounts.set(color, (linkColorCounts.get(color) || 0) + 1);
-      }
-    });
+  // Distinct buttons (background, text color, label), largest first
+  const collectButtons = (candidates, limit) => {
+    const result = [];
+    const seen = new Set();
+    candidates
+      .map((el) => ({el, area: rectOf(el).width * rectOf(el).height}))
+      .sort((a, b) => b.area - a.area)
+      .forEach(({el}) => {
+        const entry = {background: effectiveBackground(el), text: toHex(styleOf(el).color), label: labelOf(el)};
+        const key = `${entry.background}|${entry.text}|${entry.label}`;
+        if (result.length < limit && !seen.has(key)) {
+          seen.add(key);
+          result.push(entry);
+        }
+      });
+    return result;
+  };
 
   // Colors of one region: what is painted (backgrounds by area), how text looks (by characters), headings, links and
   // buttons. Elements of `exclude` (header/footer inside the content element) do not count.
@@ -206,6 +215,13 @@ exports.extractPageData = async (options) => {
       counts.set(color, (counts.get(color) || 0) + amount);
     }
   };
+  const intersect = (a, b) => ({
+    left: Math.max(a.left, b.left),
+    top: Math.max(a.top, b.top),
+    right: Math.min(a.right, b.right),
+    bottom: Math.min(a.bottom, b.bottom)
+  });
+  const rectArea = (rect) => Math.max(0, rect.right - rect.left) * Math.max(0, rect.bottom - rect.top);
 
   const analyzeRegion = (region) => {
     if (!region) {
@@ -214,23 +230,57 @@ exports.extractPageData = async (options) => {
     const root = region.element;
     const exclude = region.exclude || [];
     const inRegion = (el) => !exclude.some((excluded) => excluded.contains(el));
-    const visibleCache = new Map();
-    const visible = (el) => {
-      if (!visibleCache.has(el)) {
-        visibleCache.set(el, isVisible(el));
-      }
-      return visibleCache.get(el);
-    };
     const elements = Array.from(root.querySelectorAll("*")).slice(0, MAX_SCAN).filter((el) => inRegion(el) && visible(el));
+
+    // The region's box: the root's own box extended to its overflowing content (body/main with height: 100%). For
+    // the body fallback the part covered by the header above and the footer below is left out.
+    const rootRect = rectOf(root);
+    const bounds = {left: rootRect.left, top: rootRect.top, right: rootRect.right, bottom: rootRect.bottom};
+    if (styleOf(root).overflowY === "visible") {
+      bounds.bottom = Math.max(bounds.bottom, rootRect.top + root.scrollHeight);
+    }
+    if (region.source === "body") {
+      exclude.forEach((el) => {
+        const rect = rectOf(el);
+        if (rect.top <= bounds.top && rect.bottom > bounds.top) {
+          bounds.top = Math.min(rect.bottom, bounds.bottom);
+        } else if (rect.bottom >= bounds.bottom && rect.top < bounds.bottom) {
+          bounds.bottom = Math.max(rect.top, bounds.top);
+        }
+      });
+    }
+
+    // What an element really paints: its box clipped by every ancestor that clips (overflow other than visible) up to
+    // the region, and by the region. Fixed elements (overlays, sticky bars) are not part of the region's layout.
+    const paintedRects = new Map();
+    const paintedRect = (el) => {
+      if (paintedRects.has(el)) {
+        return paintedRects.get(el);
+      }
+      let rect = null;
+      if (styleOf(el).position !== "fixed") {
+        rect = intersect(rectOf(el), bounds);
+        for (let current = el.parentElement; current && current !== root && rect; current = current.parentElement) {
+          const style = styleOf(current);
+          if (style.position === "fixed") {
+            rect = null;
+          } else if (style.overflow !== "visible" || style.overflowY !== "visible" || style.overflowX !== "visible") {
+            rect = intersect(rect, rectOf(current));
+          }
+        }
+      }
+      paintedRects.set(el, rect);
+      return rect;
+    };
+    const paintedArea = (el) => {
+      const rect = paintedRect(el);
+      return rect ? rectArea(rect) : 0;
+    };
 
     // Backgrounds: every element with an opaque background paints its box, minus what its descendants with an own
     // background paint over it; the region element paints the rest in its effective background. Background images
     // and gradients are not counted (their area goes to the color below).
-    const bounds = root.getBoundingClientRect();
-    const clippedArea = (rect) =>
-      Math.max(0, Math.min(rect.right, bounds.right) - Math.max(rect.left, bounds.left)) *
-      Math.max(0, Math.min(rect.bottom, bounds.bottom) - Math.max(rect.top, bounds.top));
-    const painted = new Map([[root, {color: effectiveBackground(root), area: clippedArea(bounds)}]]);
+    const painted = new Map([[root, {color: effectiveBackground(root), area: rectArea(bounds)}]]);
     const paintedBelow = (el) => {
       for (let current = el.parentElement; current; current = current.parentElement) {
         if (painted.has(current)) {
@@ -240,8 +290,8 @@ exports.extractPageData = async (options) => {
       return painted.get(root);
     };
     elements.forEach((el) => {
-      const color = toHex(getComputedStyle(el).backgroundColor);
-      const area = color ? clippedArea(el.getBoundingClientRect()) : 0;
+      const color = toHex(styleOf(el).backgroundColor);
+      const area = color ? paintedArea(el) : 0;
       if (area > 0) {
         paintedBelow(el).area -= area;
         painted.set(el, {color, area});
@@ -249,7 +299,7 @@ exports.extractPageData = async (options) => {
     });
     exclude.forEach((el) => {
       if (el !== root && root.contains(el)) {
-        paintedBelow(el).area -= clippedArea(el.getBoundingClientRect());
+        paintedBelow(el).area -= paintedArea(el);
       }
     });
     const backgroundCounts = new Map();
@@ -262,7 +312,7 @@ exports.extractPageData = async (options) => {
       const parent = node.parentElement;
       const length = node.textContent.trim().length;
       if (length && parent && !/^(script|style|noscript|template)$/i.test(parent.tagName) && inRegion(parent) && visible(parent)) {
-        addCount(textCounts, toHex(getComputedStyle(parent).color), length);
+        addCount(textCounts, toHex(styleOf(parent).color), length);
       }
     }
 
@@ -271,26 +321,11 @@ exports.extractPageData = async (options) => {
     elements.forEach((el) => {
       const tag = el.tagName.toLowerCase();
       if (/^h[1-6]$/.test(tag)) {
-        addCount(headingCounts, toHex(getComputedStyle(el).color), collapse(el.innerText).length);
+        addCount(headingCounts, toHex(styleOf(el).color), collapse(el.innerText).length);
       } else if (tag === "a" && el.hasAttribute("href") && collapse(el.innerText)) {
-        addCount(linkCounts, toHex(getComputedStyle(el).color), 1);
+        addCount(linkCounts, toHex(styleOf(el).color), 1);
       }
     });
-
-    const regionButtons = [];
-    const seen = new Set();
-    buttonCandidates
-      .filter((el) => root.contains(el) && inRegion(el) && visible(el))
-      .map((el) => ({el, area: el.getBoundingClientRect().width * el.getBoundingClientRect().height}))
-      .sort((a, b) => b.area - a.area)
-      .forEach(({el}) => {
-        const entry = {background: effectiveBackground(el), text: toHex(getComputedStyle(el).color), label: labelOf(el)};
-        const key = `${entry.background}|${entry.text}|${entry.label}`;
-        if (regionButtons.length < 5 && !seen.has(key)) {
-          seen.add(key);
-          regionButtons.push(entry);
-        }
-      });
 
     const texts = topShares(textCounts, 3);
     const headings = topShares(headingCounts, 1);
@@ -299,16 +334,16 @@ exports.extractPageData = async (options) => {
       bounds: {
         x: Math.round(bounds.left + window.scrollX),
         y: Math.round(bounds.top + window.scrollY),
-        width: Math.round(bounds.width),
-        height: Math.round(bounds.height)
+        width: Math.round(bounds.right - bounds.left),
+        height: Math.round(bounds.bottom - bounds.top)
       },
       background: effectiveBackground(root),
       backgrounds: topShares(backgroundCounts, 5),
-      text: texts.length ? texts[0].color : toHex(getComputedStyle(root).color),
+      text: texts.length ? texts[0].color : toHex(styleOf(root).color),
       texts,
       headings: headings.length ? headings[0].color : null,
       links: topShares(linkCounts, 3).map((entry) => entry.color),
-      buttons: regionButtons
+      buttons: collectButtons(buttonCandidates.filter((el) => root.contains(el) && inRegion(el)), 5)
     };
   };
 
@@ -350,13 +385,15 @@ exports.extractPageData = async (options) => {
   }
   variableEntries.sort((a, b) => Number(PRIORITY_VARIABLE.test(b[0])) - Number(PRIORITY_VARIABLE.test(a[0])));
 
+  const content = analyzeRegion(contentRegion);
   const colors = {
     page: colorPair(document.body || document.documentElement),
     header: analyzeRegion(headerRegion),
-    content: analyzeRegion(contentRegion),
+    content,
     footer: analyzeRegion(footerRegion),
-    links: Array.from(linkColorCounts.entries()).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([color]) => color),
-    buttons,
+    // Page level: the content's link colors and the largest buttons of the whole page
+    links: content ? content.links : [],
+    buttons: collectButtons(buttonCandidates, 8),
     variables: Object.fromEntries(variableEntries.slice(0, 30))
   };
 
@@ -1164,20 +1201,28 @@ exports.preloadImages = async ({urls, timeout}) => {
   return true;
 };
 
-// Pages whose content scrolls inside an element (html/body at 100% height plus an inner overflow:auto container) are
-// only as high as the viewport for a screenshot. If the document itself does not scroll, the largest vertically
-// scrolling element and its ancestors are unclipped (height auto, overflow visible), so the document gets the full
-// height. Not undone: the screenshot and the positions in the metadata then refer to the same layout. Runs in the
-// isolated world.
+// The height of the document as the screenshot sees it: the scrolling element is html in standards mode and body in
+// quirks mode. Runs in the isolated world.
+exports.documentHeight = () => (document.scrollingElement || document.documentElement).scrollHeight;
+
+// Pages whose content scrolls inside an element (html/body at 100% height plus an inner overflow:auto container, or
+// body itself scrolling below an html with overflow:hidden) are only as high as the viewport for a screenshot. If the
+// document itself does not scroll, the page-wide scrolling element and its ancestors are unclipped (height auto,
+// overflow visible), so the document gets the full height. Not undone: the screenshot and the positions in the
+// metadata then refer to the same layout. Called again before the screenshot, as page scripts may restore their
+// styles meanwhile. Runs in the isolated world.
 exports.expandScrollContainer = ({viewportHeight}) => {
-  const documentHeight = () => Math.max(document.documentElement.scrollHeight, document.body ? document.body.scrollHeight : 0);
+  const documentHeight = () => (document.scrollingElement || document.documentElement).scrollHeight;
   if (documentHeight() > viewportHeight + 1) {
     return {expanded: false, height: documentHeight()};
   }
 
+  // The page's scroll container, not a scrollable widget (feed, chat, sidebar): it spans the viewport width and at
+  // least half its height
+  const viewportWidth = document.documentElement.clientWidth || window.innerWidth;
   let container = null;
-  for (const el of Array.from(document.querySelectorAll("body *")).slice(0, 5000)) {
-    if (el.scrollHeight <= el.clientHeight + 1 || el.clientHeight < viewportHeight * 0.5) {
+  for (const el of Array.from(document.querySelectorAll("body, body *")).slice(0, 5000)) {
+    if (el.scrollHeight <= el.clientHeight + 1 || el.clientHeight < viewportHeight * 0.5 || el.clientWidth < viewportWidth * 0.8) {
       continue;
     }
     if (!/(auto|scroll|overlay)/.test(getComputedStyle(el).overflowY)) {

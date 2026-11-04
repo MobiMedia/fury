@@ -118,19 +118,6 @@ const stripHash = (url) => {
 
 const isContextDestroyed = (e) => /Execution context was destroyed|Cannot find context|detached Frame/i.test(e?.message || "");
 
-// Runs an in-page function; retries once if a client side navigation destroyed the context
-const evaluateWithRetry = async (page, fn, ...args) => {
-  try {
-    return await page.evaluate(fn, ...args);
-  } catch (e) {
-    if (!isContextDestroyed(e)) {
-      throw e;
-    }
-    await sleep(500);
-    return page.evaluate(fn, ...args);
-  }
-};
-
 // Runs a self-contained function in an isolated world of the main frame: it sees the page's DOM, but not the page's
 // JavaScript, so page scripts cannot tamper with the built-ins the function uses (Array.prototype.map,
 // querySelectorAll, ...) and thereby with its result. Plain CDP, as Puppeteer's own isolated realm is internal API.
@@ -497,20 +484,25 @@ const inspectPage = async ({context, proxy, checker, params, userAgent, userAgen
 
   // 2. Full height for pages that scroll inside an element instead of the document
   let scrollContainer = false;
-  if (params.fullPage) {
+  const expandScrollContainer = async () => {
+    if (!params.fullPage) {
+      return;
+    }
     const expanded = await evaluateIsolated(identitySession, InspectExtract.expandScrollContainer, {viewportHeight: params.height}).catch((e) => {
       Utils.log(`Inspect: expanding the scroll container failed: ${e.message}`);
       return null;
     });
-    scrollContainer = Boolean(expanded?.expanded);
-  }
+    scrollContainer = scrollContainer || Boolean(expanded?.expanded);
+  };
+  await expandScrollContainer();
 
-  // Scroll down in viewport steps (lazy images, infinite lists), at most maxHeight px, then back to the top
+  // Scroll down in viewport steps (lazy images, infinite lists), at most maxHeight px, then back to the top. In the
+  // isolated world, so the page cannot stall it by replacing setTimeout or Date.
   if (params.scroll) {
-    await evaluateWithRetry(page, async ({maxHeight, stepWait, budget}) => {
+    await evaluateIsolated(identitySession, async ({maxHeight, stepWait, budget}) => {
       const start = Date.now();
       const step = Math.max(window.innerHeight, 100);
-      const pageHeight = () => Math.min(Math.max(document.documentElement.scrollHeight, document.body?.scrollHeight || 0), maxHeight);
+      const pageHeight = () => Math.min((document.scrollingElement || document.documentElement).scrollHeight, maxHeight);
 
       for (let y = step; y < pageHeight() && Date.now() - start < budget; y += step) {
         window.scrollTo(0, y);
@@ -525,12 +517,12 @@ const inspectPage = async ({context, proxy, checker, params, userAgent, userAgen
     await sleep(SETTLE_AFTER_SCROLL);
   }
 
-  // 3. Screenshot (JPEG), a full-page screenshot is clipped at maxHeight
+  // 3. Screenshot (JPEG), a full-page screenshot is clipped at maxHeight. Page scripts may have restored the clipping
+  // of their scroll container while scrolling, so it is expanded again.
+  await expandScrollContainer();
+  const measured = await evaluateIsolated(identitySession, InspectExtract.documentHeight).catch(() => null);
+  const pageHeight = Number.isFinite(measured) && measured > 0 ? Math.round(measured) : params.height;
   let clipHeight = params.height;
-  const pageHeight = await evaluateWithRetry(page, () => Math.max(
-    document.documentElement.scrollHeight,
-    document.body ? document.body.scrollHeight : 0
-  )).catch(() => params.height);
   if (params.fullPage) {
     clipHeight = Math.min(Math.max(pageHeight, params.height), params.maxHeight);
   }

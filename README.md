@@ -296,17 +296,20 @@ Fury deletes `/inspect` files older than `FURY_SAVE_DIR_MAX_AGE` (other files in
       page). `name`: an element whose id or class contains "header"/"footer" and that spans at least 80% of the
       page width (header: at most 600 px high, starting in the top 200 px). `body` (content only): no `<main>`, the
       body without header and footer.
-    - `bounds`: position and size in page coordinates (CSS px).
+    - `bounds`: position and size in page coordinates (CSS px), including content overflowing the element; for
+      `source: "body"` the span between header and footer.
     - `background`: the background color behind the region (first opaque ancestor).
     - `backgrounds`: up to 5 background colors **by painted area** within the region, with their `share` (0..1,
-      at least 0.01). A black header with a red top bar is `[{"color": "#000000", "share": 0.7}, {"color": "#d40000",
+      at least 0.01). Only what is really painted counts: content clipped by an `overflow: hidden` ancestor (hidden
+      carousel slides) and fixed overlays are left out. A black header with a red top bar is
+      `[{"color": "#000000", "share": 0.7}, {"color": "#d40000",
       "share": 0.3}]`. Background images and gradients are not counted (their area goes to the color below).
     - `text`: the dominant text color (by number of characters of visible text); `texts`: up to 3 with their share.
     - `headings`: the dominant color of `h1`-`h6`, `null` without headings.
     - `links`: up to 3 colors of visible text links, the most frequent first.
     - `buttons`: up to 5 visible buttons/button-like links of the region, the largest first.
-  - `links`, `buttons`: page wide as before (`links`: up to 3 link colors in `main`, otherwise in the whole page;
-    `buttons`: up to 8, the largest first).
+  - `links`: the link colors of `content` (`main`, otherwise the page without header and footer); `buttons`: page
+    wide, up to 8, the largest first.
   - `variables`: up to 30 custom properties on `:root` whose value is a color, names like `primary`/`brand`/`color`
     first.
 - `images`: up to 120, and **the images themselves** as files (see [Response](#response)): no need to download
@@ -377,7 +380,8 @@ Fury deletes `/inspect` files older than `FURY_SAVE_DIR_MAX_AGE` (other files in
 - `screenshot`: what the screenshot shows. `width`/`height`: its size in px; `pageHeight`: the height of the page (CSS
   px, after scrolling; at least the viewport height); `truncated`: the page is higher than the screenshot (cut at
   `maxHeight`, e.g. an endless page, or `fullPage: false`); `scrollContainer`: the page's content scrolled inside an
-  element and was expanded to its full height (the positions in the metadata refer to that expanded layout).
+  element spanning the viewport (or inside `body`) and was expanded to its full height (the positions in the metadata
+  refer to that expanded layout).
 - `blocked`: requests Fury refused, with the reason: `private address`, `port`, `scheme`, `media`, `budget`,
   `connection over 10 MB` (up to 50 entries).
 - `extractError`: only present if the extraction failed. The screenshot, the fields up to `redirects`, `screenshot`,

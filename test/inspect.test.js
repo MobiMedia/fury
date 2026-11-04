@@ -291,10 +291,15 @@ describe("/inspect with files (FURY_SAVE_DIR) and an exempt fixture host", () =>
     assert.equal(header.text, "#ffffff");
     assert.deepEqual(header.links, ["#ffffff", "#ffd700"]);
 
-    // Content: the body without header and footer
+    // Content: the body without header and footer; only the painted carousel slide and no fixed overlay count
     assert.equal(content.source, "body");
+    assert.equal(content.bounds.y, 100);
+    assert.equal(content.bounds.y + content.bounds.height, footer.bounds.y);
     assert.equal(content.background, "#ffffff");
     assert.equal(content.backgrounds[0].color, "#ffffff");
+    const contentColors = content.backgrounds.map((entry) => entry.color);
+    assert.ok(contentColors.includes("#00aa00"), JSON.stringify(content.backgrounds));
+    assert.ok(!contentColors.includes("#ff00ff") && !contentColors.includes("#123456"), JSON.stringify(content.backgrounds));
     assert.equal(content.text, "#222222");
     assert.equal(content.headings, "#0a3d62");
     assert.deepEqual(content.buttons, [{background: "#0a3d62", text: "#ffffff", label: "Jetzt kaufen"}]);
@@ -315,6 +320,16 @@ describe("/inspect with files (FURY_SAVE_DIR) and an exempt fixture host", () =>
 
     const pixel = await jpegPixel(screenshot, 100, 2750);
     assert.equal(pixel.height, 3000);
+    assert.ok(pixel.b > 200 && pixel.r < 50 && pixel.g < 50, JSON.stringify(pixel));
+  });
+
+  test("full height: a page scrolling in body below a clipped html is expanded", async () => {
+    const {metadata, screenshot} = await inspect({url: `${base}/body-scroll.html`});
+    assert.equal(metadata.screenshot.scrollContainer, true);
+    assert.equal(metadata.screenshot.pageHeight, 3000);
+    assert.equal(metadata.screenshot.height, 3000);
+
+    const pixel = await jpegPixel(screenshot, 100, 2750);
     assert.ok(pixel.b > 200 && pixel.r < 50 && pixel.g < 50, JSON.stringify(pixel));
   });
 
