@@ -39,12 +39,18 @@ exports.startFixtureServer = async ({secretPort} = {}) => {
       <script>document.getElementById("n").textContent = "webdriver=" + navigator.webdriver + " | languages=" + navigator.languages.join(",") +
         " | platform=" + navigator.platform + " | brands=" + (navigator.userAgentData ? navigator.userAgentData.brands.map((b) => b.brand).join(",") : "");</script></main>`);
   });
+  // Product photos of product.html: any name serves the same PNG; the Accept headers of the requests are kept
+  const productImageAccepts = [];
+  app.get("/products/:name.png", (req, res) => {
+    productImageAccepts.push(req.headers.accept || "");
+    res.type("png").sendFile(path.join(FIXTURES, "apple-touch-icon.png"));
+  });
   app.use(express.static(FIXTURES));
 
   const server = app.listen(0, "127.0.0.1");
   await new Promise((resolve) => server.once("listening", resolve));
 
-  return {port: server.address().port, close: () => new Promise((resolve) => server.close(resolve))};
+  return {port: server.address().port, productImageAccepts, close: () => new Promise((resolve) => server.close(resolve))};
 };
 
 // A server that must never be reached: counts every TCP connection

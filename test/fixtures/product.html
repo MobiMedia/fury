@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <title>Fjord Hoodie</title>
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "ProductGroup",
+    "name": "Fjord Hoodie",
+    "productGroupID": "FH-1",
+    "url": "/product.html",
+    "image": "/products/group.png",
+    "hasVariant": [
+      {
+        "@type": "Product",
+        "name": "Fjord Hoodie Schwarz",
+        "sku": "FH-1-BLK",
+        "color": "Schwarz",
+        "url": "/product.html?variant=blk",
+        "image": ["/products/black-1.png", {"@type": "ImageObject", "contentUrl": "/products/black-2.png"}],
+        "offers": {"@type": "Offer", "price": "89.00", "priceCurrency": "EUR"}
+      },
+      {
+        "@type": "Product",
+        "name": "Fjord Hoodie Fjordblau",
+        "sku": "FH-1-BLU",
+        "color": {"@type": "PropertyValue", "name": "Fjordblau"},
+        "image": {"@type": "ImageObject", "url": "/products/blue-1.png"},
+        "offers": {"@type": "Offer", "price": "89.00", "priceCurrency": "EUR", "url": "/product.html?variant=blu"}
+      }
+    ]
+  }
+  </script>
+</head>
+<body>
+  <main>
+    <h1>Fjord Hoodie</h1>
+    <div itemscope itemtype="https://schema.org/Product">
+      <span itemprop="name">Fjord Cap</span>
+      <meta itemprop="color" content="Rot">
+      <link itemprop="image" href="/products/cap-red.png">
+    </div>
+  </main>
+</body>
+</html>

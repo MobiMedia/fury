@@ -404,6 +404,38 @@ describe("/inspect with files (FURY_SAVE_DIR) and an exempt fixture host", () =>
     assert.deepEqual(metadata.redirects, [`${base}/redirect`, `${base}/simple.html`]);
   });
 
+  test("images of the structured data: loaded, with where they are declared, without AVIF", async () => {
+    fixture.productImageAccepts.length = 0;
+    const {metadata} = await inspect({url: `${base}/product.html`});
+    const declared = metadata.images.filter((image) => image.source === "structured-data");
+    const byUrl = Object.fromEntries(declared.map((image) => [image.url.replace(base, ""), image]));
+
+    assert.deepEqual(Object.keys(byUrl).sort(), ["/products/black-1.png", "/products/black-2.png", "/products/blue-1.png",
+      "/products/cap-red.png", "/products/group.png"]);
+    for (const image of declared) {
+      assert.ok(image.file, `${image.url} has a file`);
+      assert.equal(image.format, "png");
+      assert.ok(fs.existsSync(path.join(saveDir, image.file)));
+    }
+
+    const group = {type: ["ProductGroup"], properties: {name: "Fjord Hoodie", productGroupID: "FH-1", url: "/product.html"}};
+    assert.deepEqual(byUrl["/products/group.png"].declaredIn, {format: "json-ld", path: "jsonLd[0].image", index: 0, node: group, parent: null});
+    assert.deepEqual(byUrl["/products/black-2.png"].declaredIn, {
+      format: "json-ld", path: "jsonLd[0].hasVariant[0].image", index: 1, parent: group,
+      node: {type: ["Product"], properties: {name: "Fjord Hoodie Schwarz", sku: "FH-1-BLK", color: "Schwarz",
+        url: "/product.html?variant=blk"}}
+    });
+    assert.equal(byUrl["/products/blue-1.png"].declaredIn.node.properties.color, "Fjordblau");
+    assert.deepEqual(byUrl["/products/cap-red.png"].declaredIn,
+      {format: "microdata", path: "microdata[0].image", index: 0, parent: null,
+        node: {type: ["https://schema.org/Product"], properties: {name: "Fjord Cap", color: "Rot"}}});
+
+    assert.ok(fixture.productImageAccepts.length >= 5);
+    for (const accept of fixture.productImageAccepts) {
+      assert.doesNotMatch(accept, /avif/);
+    }
+  });
+
   test("page scripts cannot tamper with the extraction (isolated world)", async () => {
     const {metadata, screenshot} = await inspect({url: `${base}/tamper.html`});
     assert.equal(metadata.extractError, undefined);

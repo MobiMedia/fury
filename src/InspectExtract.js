@@ -470,13 +470,17 @@ exports.extractPageData = async (options) => {
     return {...scalars, _truncated: true};
   };
 
+  // The full blocks are kept for the product images (see below): the shortened copies may cut their URLs
   const jsonLd = [];
+  const fullJsonLd = [];
   document.querySelectorAll("script[type='application/ld+json' i]").forEach((el) => {
     if (jsonLd.length >= 10) {
       return;
     }
     try {
-      jsonLd.push(limitBlock(JSON.parse(el.textContent)));
+      const block = JSON.parse(el.textContent);
+      fullJsonLd.push(block);
+      jsonLd.push(limitBlock(block));
     } catch (e) {
       // invalid blocks are skipped
     }
@@ -526,9 +530,10 @@ exports.extractPageData = async (options) => {
     });
     return {type: collapse(item.getAttribute("itemtype")) || null, properties};
   };
-  const microdata = Array.from(document.querySelectorAll("[itemscope]:not([itemprop])"))
+  const fullMicrodata = Array.from(document.querySelectorAll("[itemscope]:not([itemprop])"))
     .slice(0, 30)
-    .map((item) => limitBlock(microdataItem(item, 0)));
+    .map((item) => microdataItem(item, 0));
+  const microdata = fullMicrodata.map((item) => limitBlock(item));
 
   // Open Graph (incl. its namespaces like product:, article:) and Twitter cards; repeated keys become arrays
   const URL_KEY = /(^|:)(url|secure_url|image|video|audio)$/;
@@ -1073,6 +1078,111 @@ exports.extractPageData = async (options) => {
   [["og:image", openGraph["og:image"] || openGraph["og:image:url"]], ["twitter:image", twitter["twitter:image"] || twitter["twitter:image:src"]]]
     .forEach(([source, value]) => [].concat(value || []).forEach((url) => declaredImages.push(declaredImage(url, source))));
 
+  // Structured data images: every image URL a JSON-LD node or microdata item declares (`image`, `logo`, `photo`,
+  // `thumbnailUrl`, `contentUrl`; also as ImageObject), from the full blocks - the copies in structuredData may be
+  // shortened and cut URLs. Each entry says where it was declared (`declaredIn`): the path, the type and the short
+  // scalar properties of the declaring node and of its parent node, copied, not interpreted - what a node is, the
+  // caller decides. Their own budget, so a page full of images does not crowd them out.
+  const MAX_STRUCTURED_IMAGES = 60;
+  const MAX_IMAGES_PER_NODE = 6;
+  const MAX_NODE_PROPERTIES = 20;
+  const IMAGE_KEYS = ["image", "logo", "photo", "thumbnailUrl", "contentUrl"];
+  const structuredImages = [];
+  const seenStructuredImages = new Set();
+  // A property value as text: a string or number, or the name/value/@id of a flat object (a PropertyValue, a Brand) -
+  // not of a node with nodes of its own, which is described where it declares images itself
+  const scalarOf = (value) => {
+    const first = [].concat(value ?? [])[0];
+    if (typeof first === "string" || typeof first === "number" || typeof first === "boolean") {
+      return typeof first === "string" ? truncate(first, 200) || null : first;
+    }
+    if (first && typeof first === "object" && !Array.isArray(first)
+      && !Object.values(first).some((nested) => nested && typeof nested === "object")) {
+      const named = first.name ?? first.value ?? first["@id"];
+      return typeof named === "string" || typeof named === "number" ? truncate(named, 200) || null : null;
+    }
+    return null;
+  };
+  const describeNode = (node, type) => {
+    if (!node || typeof node !== "object") {
+      return null;
+    }
+    const properties = {};
+    for (const [key, value] of Object.entries(node)) {
+      if (Object.keys(properties).length >= MAX_NODE_PROPERTIES) {
+        break;
+      }
+      if (key === "@context" || key === "@type" || IMAGE_KEYS.includes(key)) {
+        continue;
+      }
+      const scalar = scalarOf(value);
+      if (scalar !== null) {
+        properties[key] = scalar;
+      }
+    }
+    return {type: [].concat(type ?? []).filter((item) => typeof item === "string").map((item) => truncate(item, 100)), properties};
+  };
+  const imageUrlsOf = (value) => [].concat(value || [])
+    .map((item) => (typeof item === "string" ? item : item && typeof item === "object" ? item.contentUrl || item.url : null))
+    .map((item) => [].concat(item || [])[0])
+    .filter((item) => typeof item === "string")
+    .map((item) => absoluteUrl(item))
+    .filter(Boolean);
+  const addStructuredImages = (urls, declaredIn) => {
+    urls.slice(0, MAX_IMAGES_PER_NODE).forEach((url, index) => {
+      const key = `${declaredIn.path}|${url}`;
+      if (structuredImages.length < MAX_STRUCTURED_IMAGES && !seenStructuredImages.has(key)) {
+        seenStructuredImages.add(key);
+        structuredImages.push({...declaredImage(url, "structured-data"), declaredIn: {...declaredIn, index}});
+      }
+    });
+  };
+  const collectJsonLdImages = (node, path, parent, depth) => {
+    if (depth > 10 || structuredImages.length >= MAX_STRUCTURED_IMAGES || !node || typeof node !== "object") {
+      return;
+    }
+    if (Array.isArray(node)) {
+      node.slice(0, 200).forEach((item, i) => collectJsonLdImages(item, `${path}[${i}]`, parent, depth + 1));
+      return;
+    }
+
+    const own = describeNode(node, node["@type"]);
+    for (const key of IMAGE_KEYS) {
+      const urls = imageUrlsOf(node[key]);
+      if (urls.length) {
+        addStructuredImages(urls, {format: "json-ld", path: `${path}.${key}`, node: own, parent});
+      }
+    }
+    for (const [key, value] of Object.entries(node)) {
+      if (value && typeof value === "object" && !IMAGE_KEYS.includes(key)) {
+        collectJsonLdImages(value, `${path}.${key}`, own, depth + 1);
+      }
+    }
+  };
+  const collectMicrodataImages = (item, path, parent, depth) => {
+    if (depth > 6 || structuredImages.length >= MAX_STRUCTURED_IMAGES || !item || typeof item !== "object") {
+      return;
+    }
+    const properties = item.properties || {};
+    const own = describeNode(Object.fromEntries(Object.entries(properties).map(([key, value]) =>
+      [key, [].concat(value).map((entry) => (entry && typeof entry === "object" && entry.properties ? entry.properties : entry))])), item.type);
+    for (const key of IMAGE_KEYS) {
+      const urls = imageUrlsOf(properties[key]);
+      if (urls.length) {
+        addStructuredImages(urls, {format: "microdata", path: `${path}.${key}`, node: own, parent});
+      }
+    }
+    for (const [key, value] of Object.entries(properties)) {
+      [].concat(value).forEach((nested, i) => {
+        if (nested && typeof nested === "object" && nested.properties) {
+          collectMicrodataImages(nested, `${path}.${key}[${i}]`, own, depth + 1);
+        }
+      });
+    }
+  };
+  fullJsonLd.forEach((block, i) => collectJsonLdImages(block, `jsonLd[${i}]`, null, 0));
+  fullMicrodata.forEach((item, i) => collectMicrodataImages(item, `microdata[${i}]`, null, 0));
+
   const images = [];
   const seenImages = new Set();
   [...pageImages, ...declaredImages].forEach((image) => {
@@ -1082,6 +1192,7 @@ exports.extractPageData = async (options) => {
       images.push(image);
     }
   });
+  images.push(...structuredImages);
 
   // --- Headings ---------------------------------------------------------------------------------------------------
   const headings = Array.from(document.querySelectorAll("h1, h2, h3, h4, h5, h6"))

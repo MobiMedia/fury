@@ -317,19 +317,30 @@ Fury deletes `/inspect` files older than `FURY_SAVE_DIR_MAX_AGE` (other files in
   16x16 px): every visible `<img>`, CSS background images on the page, and the logo candidates found inside links to
   the start page and inside elements named like a logo (also inline SVG, CSS masks and hidden responsive variants,
   e.g. a square logo shown only on mobile). Ordered by the hints (logo candidates first), then by size. Then the
-  images the page declares (icons, sharing images).
+  images the page declares (icons, sharing images), then the images the structured data declares (`source`
+  `structured-data`, at most 60, at most 6 per node).
   - `url`: absolute `http(s)` URL of the image, `null` for an inline image (inline `<svg>`, `data:` URL).
   - `file`: the image file (with `FURY_SAVE_DIR` the file name in the directory, otherwise the key in `data.images`),
     `null` if Fury has no bytes for it (failed to load, not an image, over the byte limits). Several entries with the
     same URL share one file. `bytes`: its size.
   - The files are **exactly what the site served** (the browser's own responses; images the page did not load itself,
-    like `apple-touch-icon`, `og:image` or a hidden variant, are loaded through the page afterwards). Only real image
-    formats are stored: the type is detected from the content, not from the server's `Content-Type`.
+    like `apple-touch-icon`, `og:image`, a hidden variant or an image of the structured data, are loaded through the
+    page afterwards).
+    Only real image formats are stored: the type is detected from the content, not from the server's `Content-Type`.
+    Image requests do not offer AVIF in their `Accept` header, so servers that negotiate the format send WebP or JPEG.
   - `rendered: true`: the file is Fury's PNG rendering of an inline logo candidate (transparent background, at least
     twice the CSS size, longest side at most 512 px).
   - `source`: where the image comes from: `img`, `svg` (inline SVG), `css-background`, `css-mask`, `object`
     (`<object>`/`<embed>`), or for declared images `icon`, `apple-touch-icon`, `mask-icon`, `og:image`,
-    `twitter:image`.
+    `twitter:image`, and `structured-data` for an image URL a JSON-LD node or microdata item declares (`image`, `logo`,
+    `photo`, `thumbnailUrl`, `contentUrl`, also as `ImageObject`).
+  - `declaredIn` (only `source: "structured-data"`): where the structured data declares the image, copied, not
+    interpreted - read from the full blocks (the copies in `structuredData` may be shortened):
+    `{format: "json-ld"|"microdata", path, index, node, parent}`. `path` is the property in the blocks
+    (`jsonLd[0].hasVariant[1].image`), `index` the position of the URL in it. `node` and `parent` (`null` at the top)
+    describe the declaring node and the node around it as `{type: [...], properties: {...}}`: its types and up to 20
+    of its properties as short text - a string or number, or the `name`/`value`/`@id` of an object. Any of the page's
+    types can appear: a `Product` with its `color`, an `Organization` with its `logo`, an `Article`, ...
   - `format`: format of the `file` (detected from its content): `svg`, `png`, `jpeg`, `gif`, `webp`, `avif`, `ico`,
     `bmp`; without a file the format guessed from the URL, or `null`. **SVG files are the site's original and may
     contain scripts**: rasterize or sanitize them before serving them from your own domain.

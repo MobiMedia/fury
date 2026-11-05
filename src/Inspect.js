@@ -33,6 +33,13 @@ const MAX_IMAGE_BYTES = 10 * MB;
 // Images the page did not load itself (declared icons, sharing images, hidden variants) are loaded afterwards
 const MAX_PRELOAD = 30;
 const PRELOAD_TIMEOUT = 3000;
+// The images the structured data declares (source `structured-data`) are loaded on top, with a little more time: they
+// are mostly photos, not icons
+const MAX_PRELOAD_STRUCTURED = 40;
+const PRELOAD_TIMEOUT_STRUCTURED = 5000;
+// Image requests do not offer AVIF: callers store the images, and few of them can read it. Servers that negotiate the
+// format send WebP or JPEG instead.
+const IMAGE_ACCEPT = "image/webp,image/apng,image/svg+xml,image/png,image/jpeg,image/*;q=0.8,*/*;q=0.5";
 // Time kept free before the hard deadline for writing the result
 const DEADLINE_MARGIN = 1500;
 
@@ -293,7 +300,8 @@ const attachImageFiles = async (images, capture, until) => {
       url: entry.url, file, bytes, rendered, source: entry.source, format, alt: entry.alt, width: entry.width,
       height: entry.height, naturalWidth: entry.naturalWidth ?? null, naturalHeight: entry.naturalHeight ?? null,
       x: entry.x ?? null, y: entry.y ?? null, shape: entry.shape, area: entry.area, visible: entry.visible,
-      hints: entry.hints, link: entry.link ?? null, color: entry.color, background: entry.background
+      hints: entry.hints, link: entry.link ?? null, color: entry.color, background: entry.background,
+      declaredIn: entry.declaredIn ?? null
     });
   }
 
@@ -405,7 +413,8 @@ const inspectPage = async ({context, proxy, checker, params, userAgent, userAgen
     }
 
     if (!refusal) {
-      request.continue().catch(() => {});
+      const overrides = request.resourceType() === "image" ? {headers: {...request.headers(), accept: IMAGE_ACCEPT}} : undefined;
+      request.continue(overrides).catch(() => {});
       return;
     }
 
@@ -552,8 +561,12 @@ const inspectPage = async ({context, proxy, checker, params, userAgent, userAgen
   let imageFiles = [];
   if (extracted.images?.length) {
     const until = deadline - DEADLINE_MARGIN;
-    const missing = [...new Set(extracted.images.filter((image) => image.url && !capture.has(image.url)).map((image) => image.url))].slice(0, MAX_PRELOAD);
-    const preloadTimeout = Math.min(PRELOAD_TIMEOUT, until - Date.now() - 500);
+    const missingOf = (images, max) => [...new Set(images.filter((image) => image.url && !capture.has(image.url)).map((image) => image.url))].slice(0, max);
+    const page = missingOf(extracted.images.filter((image) => image.source !== "structured-data"), MAX_PRELOAD);
+    const structured = missingOf(extracted.images.filter((image) => image.source === "structured-data"), MAX_PRELOAD_STRUCTURED)
+      .filter((url) => !page.includes(url));
+    const missing = [...page, ...structured];
+    const preloadTimeout = Math.min(structured.length ? PRELOAD_TIMEOUT_STRUCTURED : PRELOAD_TIMEOUT, until - Date.now() - 500);
     if (missing.length && preloadTimeout > 0) {
       await evaluateIsolated(identitySession, InspectExtract.preloadImages, {urls: missing, timeout: preloadTimeout}).catch((e) => {
         Utils.log(`Inspect: loading images failed: ${e.message}`);
