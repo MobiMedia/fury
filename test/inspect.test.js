@@ -95,7 +95,7 @@ describe("/inspect with files (FURY_SAVE_DIR) and an exempt fixture host", () =>
       url: `${base}/logo.svg`, file: undefined, bytes: undefined, rendered: false, source: "img", format: "svg",
       alt: "Nordlicht Shoes", width: 120, height: 40, naturalWidth: 120, naturalHeight: 40, x: undefined, y: undefined,
       shape: "landscape", area: "header", visible: true, hints: ["logo", "links-home", "header", "above-fold"],
-      link: `${base}/`, color: null, background: "#ffffff"
+      link: `${base}/`, color: null, background: "#ffffff", declaredIn: null
     });
     assert.match(logo.file, /^[0-9a-f-]{36}-image-\d+\.svg$/);
     assert.deepEqual(fs.readFileSync(path.join(saveDir, logo.file)), fs.readFileSync(path.join(__dirname, "fixtures", "logo.svg")));
@@ -226,7 +226,7 @@ describe("/inspect with files (FURY_SAVE_DIR) and an exempt fixture host", () =>
       url: null, file: undefined, bytes: undefined, rendered: true, source: "svg", format: "png", alt: "Shop Logo",
       width: 261, height: 73, naturalWidth: null, naturalHeight: null, x: undefined, y: undefined, shape: "landscape",
       area: "header", visible: true, hints: ["logo", "links-home", "header", "above-fold"], link: `${base}/`,
-      color: "#ffffff", background: "#000000"
+      color: "#ffffff", background: "#000000", declaredIn: null
     });
     assert.equal(wordmark.x, 8);
     assert.ok(wordmark.y >= 8 && wordmark.y <= 12, String(wordmark.y));
@@ -253,7 +253,7 @@ describe("/inspect with files (FURY_SAVE_DIR) and an exempt fixture host", () =>
       url: `${base}/mask-logo.svg`, file: undefined, bytes: undefined, rendered: false, source: "css-mask", format: "svg",
       alt: "Mask Shop Zustellung", width: 67, height: 23, naturalWidth: null, naturalHeight: null, x: undefined, y: undefined,
       shape: "landscape", area: "other", visible: true, hints: ["links-home", "header", "above-fold"], link: `${base}/de-de`,
-      color: "#d40000", background: "#ffffff"
+      color: "#d40000", background: "#ffffff", declaredIn: null
     });
     // The mask file as the page loaded it (only the shape; paint it in `color`)
     assert.deepEqual(fs.readFileSync(path.join(saveDir, masks[0].file)), fs.readFileSync(path.join(__dirname, "fixtures", "mask-logo.svg")));

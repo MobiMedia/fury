@@ -237,7 +237,7 @@ Fury deletes `/inspect` files older than `FURY_SAVE_DIR_MAX_AGE` (other files in
     {"url": "https://.../apple-touch-icon.png", "file": "image-4.png", "bytes": 3311, "rendered": false,
      "source": "apple-touch-icon", "format": "png", "alt": "", "width": 180, "height": 180, "naturalWidth": null,
      "naturalHeight": null, "x": null, "y": null, "shape": "square", "area": null, "visible": null, "hints": [],
-     "link": null, "color": null, "background": null}
+     "link": null, "color": null, "background": null, "declaredIn": null}
   ],
   "forms": [
     {"action": "https://.../login", "method": "post", "area": "main", "submit": "Sign in",
