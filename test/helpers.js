@@ -26,6 +26,14 @@ exports.startFixtureServer = async ({secretPort} = {}) => {
     const html = fs.readFileSync(path.join(FIXTURES, "security.html"), "utf8").replace(/__SECRET_PORT__/g, String(secretPort));
     res.type("html").send(html);
   });
+  // The icon at the root of the origin, a PNG under the name as many sites have it; the origin `localhost` has none
+  app.get("/favicon.ico", (req, res) => {
+    if (String(req.headers.host).startsWith("localhost")) {
+      res.status(404).type("html").send("<!doctype html><title>Not found</title>");
+    } else {
+      res.type("image/x-icon").sendFile(path.join(FIXTURES, "apple-touch-icon.png"));
+    }
+  });
   app.get("/missing.html", (req, res) => {
     res.status(404).type("html").send("<!doctype html><title>Not found</title><h1>Seite nicht gefunden</h1>");
   });

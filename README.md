@@ -237,7 +237,7 @@ Fury deletes `/inspect` files older than `FURY_SAVE_DIR_MAX_AGE` (other files in
     {"url": "https://.../apple-touch-icon.png", "file": "image-4.png", "bytes": 3311, "rendered": false,
      "source": "apple-touch-icon", "format": "png", "alt": "", "width": 180, "height": 180, "naturalWidth": null,
      "naturalHeight": null, "x": null, "y": null, "shape": "square", "area": null, "visible": null, "hints": [],
-     "link": null, "color": null, "background": null, "declaredIn": null}
+     "link": null, "color": null, "background": null, "declaredIn": null, "implicit": false}
   ],
   "forms": [
     {"action": "https://.../login", "method": "post", "area": "main", "submit": "Sign in",
@@ -341,6 +341,9 @@ Fury deletes `/inspect` files older than `FURY_SAVE_DIR_MAX_AGE` (other files in
     describe the declaring node and the node around it as `{type: [...], properties: {...}}`: its types and up to 20
     of its properties as short text - a string or number, or the `name`/`value`/`@id` of an object. Any of the page's
     types can appear: a `Product` with its `color`, an `Organization` with its `logo`, an `Article`, ...
+  - `implicit`: `true` for the one image the page does not declare itself: a page without an `icon` link gets
+    `<origin>/favicon.ico` as its `icon`, the address browsers ask for by convention. It has a `file` only when the
+    origin answers an image there. `false` for every other image.
   - `format`: format of the `file` (detected from its content): `svg`, `png`, `jpeg`, `gif`, `webp`, `avif`, `ico`,
     `bmp`; without a file the format guessed from the URL, or `null`. **SVG files are the site's original and may
     contain scripts**: rasterize or sanitize them before serving them from your own domain.
