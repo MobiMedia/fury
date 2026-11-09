@@ -26,6 +26,15 @@ exports.startFixtureServer = async ({secretPort} = {}) => {
     const html = fs.readFileSync(path.join(FIXTURES, "security.html"), "utf8").replace(/__SECRET_PORT__/g, String(secretPort));
     res.type("html").send(html);
   });
+  // The icon at the root of the origin, a PNG under the name as many sites have it; a test can take it away
+  const icon = {present: true};
+  app.get("/favicon.ico", (req, res) => {
+    if (icon.present) {
+      res.type("image/x-icon").sendFile(path.join(FIXTURES, "apple-touch-icon.png"));
+    } else {
+      res.status(404).type("html").send("<!doctype html><title>Not found</title>");
+    }
+  });
   app.get("/missing.html", (req, res) => {
     res.status(404).type("html").send("<!doctype html><title>Not found</title><h1>Seite nicht gefunden</h1>");
   });
@@ -50,7 +59,7 @@ exports.startFixtureServer = async ({secretPort} = {}) => {
   const server = app.listen(0, "127.0.0.1");
   await new Promise((resolve) => server.once("listening", resolve));
 
-  return {port: server.address().port, productImageAccepts, close: () => new Promise((resolve) => server.close(resolve))};
+  return {port: server.address().port, productImageAccepts, icon, close: () => new Promise((resolve) => server.close(resolve))};
 };
 
 // A server that must never be reached: counts every TCP connection

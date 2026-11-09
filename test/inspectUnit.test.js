@@ -192,7 +192,7 @@ test("attachImageFiles: captured bodies and rendered PNGs become files, one file
   ]);
   assert.equal("dataUrl" in images[1], false);
   assert.deepEqual(Object.keys(images[0]), ["url", "file", "bytes", "rendered", "source", "format", "alt", "width", "height",
-    "naturalWidth", "naturalHeight", "x", "y", "shape", "area", "visible", "hints", "link", "color", "background", "declaredIn"]);
+    "naturalWidth", "naturalHeight", "x", "y", "shape", "area", "visible", "hints", "link", "color", "background", "declaredIn", "implicit"]);
 });
 
 test("writeFiles: images get the id prefix, the JSON names them", async () => {

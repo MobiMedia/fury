@@ -1061,7 +1061,7 @@ exports.extractPageData = async (options) => {
   const declaredImage = (url, source, {format = null, width = null, height = null, color = null} = {}) => ({
     url: absoluteUrl(url), dataUrl: null, source, format: format || formatOf(url), alt: "", width, height,
     naturalWidth: null, naturalHeight: null, x: null, y: null, shape: shapeOf(width, height), area: null, visible: null,
-    hints: [], link: null, color, background: null
+    hints: [], link: null, color, background: null, implicit: false
   });
   const declaredImages = [];
   document.querySelectorAll("link[rel~=icon i], link[rel~=apple-touch-icon i], link[rel~=apple-touch-icon-precomposed i], link[rel~=mask-icon i]").forEach((el) => {
@@ -1075,6 +1075,11 @@ exports.extractPageData = async (options) => {
       color: source === "mask-icon" ? toHex(el.getAttribute("color")) : null
     }));
   });
+  // A page that declares no icon has the one browsers ask its origin for by convention. Whether there is one, the
+  // file tells: like every declared image it is loaded through the page afterwards.
+  if (!declaredImages.some((image) => image.source === "icon" && image.url) && /^https?:$/.test(location.protocol)) {
+    declaredImages.push({...declaredImage(`${location.origin}/favicon.ico`, "icon"), implicit: true});
+  }
   [["og:image", openGraph["og:image"] || openGraph["og:image:url"]], ["twitter:image", twitter["twitter:image"] || twitter["twitter:image:src"]]]
     .forEach(([source, value]) => [].concat(value || []).forEach((url) => declaredImages.push(declaredImage(url, source))));
 

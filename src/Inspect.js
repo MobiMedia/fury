@@ -301,7 +301,7 @@ const attachImageFiles = async (images, capture, until) => {
       height: entry.height, naturalWidth: entry.naturalWidth ?? null, naturalHeight: entry.naturalHeight ?? null,
       x: entry.x ?? null, y: entry.y ?? null, shape: entry.shape, area: entry.area, visible: entry.visible,
       hints: entry.hints, link: entry.link ?? null, color: entry.color, background: entry.background,
-      declaredIn: entry.declaredIn ?? null
+      declaredIn: entry.declaredIn ?? null, implicit: entry.implicit === true
     });
   }
 

@@ -71,6 +71,26 @@ describe("/inspect with files (FURY_SAVE_DIR) and an exempt fixture host", () =>
     assert.equal(fs.existsSync(path.join(saveDir, oldOtherFile)), true);
   });
 
+  test("a page without a declared icon has the one of its origin (implicit)", async () => {
+    const {metadata} = await inspect({url: `${base}/simple.html`});
+
+    const icons = metadata.images.filter((image) => image.source === "icon");
+    assert.deepEqual(icons.map((image) => [image.url, image.implicit]), [[`${base}/favicon.ico`, true]]);
+    // The fixture server answers a PNG under the name: the type comes from the content
+    assert.match(icons[0].file, /-image-\d+\.png$/);
+    assert.equal(icons[0].format, "png");
+
+    // An origin without one: the entry has no file
+    fixture.icon.present = false;
+    try {
+      const {metadata: other} = await inspect({url: `${base}/simple.html`});
+      const missing = other.images.filter((image) => image.source === "icon");
+      assert.deepEqual(missing.map((image) => [image.implicit, image.file]), [[true, null]]);
+    } finally {
+      fixture.icon.present = true;
+    }
+  });
+
   test("metadata of a shop page", async () => {
     const {response, metadata, screenshot} = await inspect({url: `${base}/shop.html`});
 
@@ -95,7 +115,7 @@ describe("/inspect with files (FURY_SAVE_DIR) and an exempt fixture host", () =>
       url: `${base}/logo.svg`, file: undefined, bytes: undefined, rendered: false, source: "img", format: "svg",
       alt: "Nordlicht Shoes", width: 120, height: 40, naturalWidth: 120, naturalHeight: 40, x: undefined, y: undefined,
       shape: "landscape", area: "header", visible: true, hints: ["logo", "links-home", "header", "above-fold"],
-      link: `${base}/`, color: null, background: "#ffffff", declaredIn: null
+      link: `${base}/`, color: null, background: "#ffffff", declaredIn: null, implicit: false
     });
     assert.match(logo.file, /^[0-9a-f-]{36}-image-\d+\.svg$/);
     assert.deepEqual(fs.readFileSync(path.join(saveDir, logo.file)), fs.readFileSync(path.join(__dirname, "fixtures", "logo.svg")));
@@ -116,7 +136,9 @@ describe("/inspect with files (FURY_SAVE_DIR) and an exempt fixture host", () =>
     const touchIcon = metadata.images.find((image) => image.source === "apple-touch-icon" && image.url === `${base}/apple-touch-icon.png`);
     assert.match(touchIcon.file, /-image-\d+\.png$/);
     assert.equal(touchIcon.format, "png");
-    assert.ok(metadata.images.some((image) => image.source === "icon" && image.url === `${base}/favicon.ico`));
+    // The declared icon is the only one: nothing is assumed next to it
+    assert.deepEqual(metadata.images.filter((image) => image.source === "icon").map((image) => [image.url, image.implicit]),
+      [[`${base}/favicon.ico`, false]]);
     assert.ok(metadata.images.some((image) => image.source === "og:image" && image.url === `${base}/og.jpg`));
 
     assert.deepEqual(metadata.headings, [{level: 1, text: "Schuhe aus dem Norden"}, {level: 2, text: "Neu eingetroffen"}]);
@@ -226,7 +248,7 @@ describe("/inspect with files (FURY_SAVE_DIR) and an exempt fixture host", () =>
       url: null, file: undefined, bytes: undefined, rendered: true, source: "svg", format: "png", alt: "Shop Logo",
       width: 261, height: 73, naturalWidth: null, naturalHeight: null, x: undefined, y: undefined, shape: "landscape",
       area: "header", visible: true, hints: ["logo", "links-home", "header", "above-fold"], link: `${base}/`,
-      color: "#ffffff", background: "#000000", declaredIn: null
+      color: "#ffffff", background: "#000000", declaredIn: null, implicit: false
     });
     assert.equal(wordmark.x, 8);
     assert.ok(wordmark.y >= 8 && wordmark.y <= 12, String(wordmark.y));
@@ -253,7 +275,7 @@ describe("/inspect with files (FURY_SAVE_DIR) and an exempt fixture host", () =>
       url: `${base}/mask-logo.svg`, file: undefined, bytes: undefined, rendered: false, source: "css-mask", format: "svg",
       alt: "Mask Shop Zustellung", width: 67, height: 23, naturalWidth: null, naturalHeight: null, x: undefined, y: undefined,
       shape: "landscape", area: "other", visible: true, hints: ["links-home", "header", "above-fold"], link: `${base}/de-de`,
-      color: "#d40000", background: "#ffffff", declaredIn: null
+      color: "#d40000", background: "#ffffff", declaredIn: null, implicit: false
     });
     // The mask file as the page loaded it (only the shape; paint it in `color`)
     assert.deepEqual(fs.readFileSync(path.join(saveDir, masks[0].file)), fs.readFileSync(path.join(__dirname, "fixtures", "mask-logo.svg")));
