@@ -81,9 +81,14 @@ describe("/inspect with files (FURY_SAVE_DIR) and an exempt fixture host", () =>
     assert.equal(icons[0].format, "png");
 
     // An origin without one: the entry has no file
-    const {metadata: other} = await inspect({url: `http://localhost:${fixture.port}/simple.html`});
-    const missing = other.images.filter((image) => image.source === "icon");
-    assert.deepEqual(missing.map((image) => [image.implicit, image.file]), [[true, null]]);
+    fixture.icon.present = false;
+    try {
+      const {metadata: other} = await inspect({url: `${base}/simple.html`});
+      const missing = other.images.filter((image) => image.source === "icon");
+      assert.deepEqual(missing.map((image) => [image.implicit, image.file]), [[true, null]]);
+    } finally {
+      fixture.icon.present = true;
+    }
   });
 
   test("metadata of a shop page", async () => {
