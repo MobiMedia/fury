@@ -18,11 +18,11 @@ const startTarget = async (size = 10) => {
   return {port: server.address().port, close: () => new Promise((resolve) => server.close(resolve))};
 };
 
-const startProxy = async (allowPrivate, {lookup, maxConnectionBytes = 10 * MB, maxTotalBytes = 25 * MB} = {}) => {
+const startProxy = async (allowPrivate, {lookup, maxResponseBytes = 10 * MB, maxTotalBytes = 40 * MB} = {}) => {
   const blocked = [];
   const checker = AddressPolicy.createChecker(AddressPolicy.parseAllowPrivate(allowPrivate), lookup ? {lookup} : {});
   const proxy = await InspectProxy.start({
-    checker, maxConnectionBytes, maxTotalBytes,
+    checker, maxResponseBytes, maxTotalBytes,
     onBlocked: (target, reason) => blocked.push(`${target} (${reason})`)
   });
   return {proxy, blocked};
@@ -162,17 +162,33 @@ test("ports other than 80/443 are refused", async () => {
   }
 });
 
-test("a connection over the per-connection limit is closed", async () => {
+test("a plain HTTP response over the per-response limit is cut", async () => {
   const target = await startTarget(3 * MB);
-  const {proxy, blocked} = await startProxy(`127.0.0.1:${target.port}`, {maxConnectionBytes: 1 * MB, maxTotalBytes: 100 * MB});
+  const {proxy, blocked} = await startProxy(`127.0.0.1:${target.port}`, {maxResponseBytes: 1 * MB, maxTotalBytes: 100 * MB});
+
+  try {
+    const response = await proxiedGet(proxy.port, `http://127.0.0.1:${target.port}/big`).catch(() => ({body: Buffer.alloc(0)}));
+    assert.ok(response.body.length <= 1 * MB + 64 * 1024, `received ${response.body.length}`);
+    assert.ok(blocked.some((entry) => entry.includes("response over 1 MB")), blocked.join("\n"));
+    assert.equal(proxy.exhausted(), false);
+  } finally {
+    await proxy.close();
+    await target.close();
+  }
+});
+
+test("a tunnel has no limit of its own: many responses to one host pass until the total budget", async () => {
+  // HTTP/2 sends all requests to a host through one tunnel: 3 MB here, far over the limit of a single response
+  const target = await startTarget(3 * MB);
+  const {proxy, blocked} = await startProxy(`127.0.0.1:${target.port}`, {maxResponseBytes: 1 * MB, maxTotalBytes: 100 * MB});
 
   try {
     const {status, socket} = await connect(proxy.port, `127.0.0.1:${target.port}`);
     assert.match(status, /200/);
     socket.write(`GET /big HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n`);
     const bytes = await drain(socket);
-    assert.ok(bytes <= 1 * MB + 64 * 1024, `received ${bytes}`);
-    assert.ok(blocked.some((entry) => entry.includes("connection over 1 MB")), blocked.join("\n"));
+    assert.ok(bytes >= 3 * MB, `received ${bytes}`);
+    assert.deepEqual(blocked, []);
     assert.equal(proxy.exhausted(), false);
   } finally {
     await proxy.close();
@@ -182,7 +198,7 @@ test("a connection over the per-connection limit is closed", async () => {
 
 test("the total budget stops everything and refuses new connections", async () => {
   const target = await startTarget(800 * 1024);
-  const {proxy, blocked} = await startProxy(`127.0.0.1:${target.port}`, {maxConnectionBytes: 10 * MB, maxTotalBytes: 2 * MB});
+  const {proxy, blocked} = await startProxy(`127.0.0.1:${target.port}`, {maxTotalBytes: 2 * MB});
 
   try {
     for (let i = 0; i < 4; i++) {

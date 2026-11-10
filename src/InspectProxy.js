@@ -7,7 +7,9 @@ const AddressPolicy = require("./AddressPolicy.js");
 // - CONNECT host:port (HTTPS, WSS, WS) is tunneled
 // - absolute-URI requests (plain HTTP) are forwarded
 // Every target is checked with the AddressPolicy and the proxy connects to exactly the checked address, so DNS
-// rebinding cannot reach a private address. It also enforces the byte limits (per connection and per inspect).
+// rebinding cannot reach a private address. It also enforces the byte limits: per inspect for everything, per response
+// for plain HTTP. A tunnel has no limit of its own: its content is encrypted, so the proxy cannot tell the responses
+// apart, and with HTTP/2 one tunnel carries all requests to a host - a limit per tunnel would be one per host.
 
 const CONNECT_TIMEOUT = 10 * 1000;
 
@@ -56,12 +58,12 @@ const connectToAny = (addresses, port) => new Promise((resolve, reject) => {
 /**
  * @param {object} options
  * @param {object} options.checker - AddressPolicy.createChecker() result (shared with the request interception)
- * @param {number} options.maxConnectionBytes - per tunnel / per forwarded response
- * @param {number} options.maxTotalBytes - per inspect
+ * @param {number} options.maxResponseBytes - per forwarded response (plain HTTP)
+ * @param {number} options.maxTotalBytes - per inspect, tunnels included
  * @param {function(string, string)} options.onBlocked - (target, reason)
  * @returns {Promise<{port: number, failures: Map, close: function, exhausted: function}>}
  */
-exports.start = async ({checker, maxConnectionBytes, maxTotalBytes, onBlocked}) => {
+exports.start = async ({checker, maxResponseBytes, maxTotalBytes, onBlocked}) => {
   const sockets = new Set();
   // "host:port" -> {code: "dns"|"connect"|"blocked address", message}, used to explain a failed main navigation
   const failures = new Map();
@@ -87,8 +89,9 @@ exports.start = async ({checker, maxConnectionBytes, maxTotalBytes, onBlocked}) 
     }
   };
 
-  // Counts bytes of one connection; returns false (and destroys) when a limit is exceeded
-  const createCounter = (label, destroy) => {
+  // Counts bytes of one connection towards the total and, with a `limit`, towards its own; returns false (and
+  // destroys) when a limit is exceeded
+  const createCounter = (label, destroy, limit = Infinity) => {
     let bytes = 0;
 
     return (chunk) => {
@@ -100,8 +103,8 @@ exports.start = async ({checker, maxConnectionBytes, maxTotalBytes, onBlocked}) 
         return false;
       }
 
-      if (bytes > maxConnectionBytes) {
-        onBlocked(label, `connection over ${Math.round(maxConnectionBytes / 1024 / 1024)} MB`);
+      if (bytes > limit) {
+        onBlocked(label, `response over ${Math.round(limit / 1024 / 1024)} MB`);
         destroy();
         return false;
       }
@@ -174,8 +177,10 @@ exports.start = async ({checker, maxConnectionBytes, maxTotalBytes, onBlocked}) 
     };
     const count = createCounter(label, destroyBoth);
 
-    upstream.on("close", () => clientSocket.destroy());
-    clientSocket.on("close", () => upstream.destroy());
+    // The side that is still open is ended, not destroyed: what was written to it but not sent yet (the end of a
+    // response whose server closes the connection) still goes out
+    upstream.on("close", (hadError) => (hadError ? clientSocket.destroy() : clientSocket.end()));
+    clientSocket.on("close", (hadError) => (hadError ? upstream.destroy() : upstream.end()));
 
     upstream.on("data", (chunk) => {
       if (count(chunk)) {
@@ -271,7 +276,7 @@ exports.start = async ({checker, maxConnectionBytes, maxTotalBytes, onBlocked}) 
       const count = createCounter(label, () => {
         upstreamRes.destroy();
         res.destroy();
-      });
+      }, maxResponseBytes);
 
       res.writeHead(upstreamRes.statusCode, upstreamRes.statusMessage, responseHeaders);
       upstreamRes.on("data", (chunk) => {
