@@ -397,11 +397,11 @@ Fury deletes `/inspect` files older than `FURY_SAVE_DIR_MAX_AGE` (other files in
   element spanning the viewport (or inside `body`) and was expanded to its full height (the positions in the metadata
   refer to that expanded layout).
 - `blocked`: requests Fury refused, with the reason: `private address`, `port`, `scheme`, `media`, `budget`,
-  `connection over 10 MB` (up to 50 entries).
+  `response over 10 MB` (up to 50 entries).
 - `extractError`: only present if the extraction failed. The screenshot, the fields up to `redirects`, `screenshot`,
   `blocked` and `timings` are still there.
 - The whole JSON is kept below ~500 KB (`text`, then `links`, ... are shortened if necessary). The image files count
-  towards the byte limits of the page (10 MB per connection, 25 MB per inspect), not towards the JSON.
+  towards the byte limit of the page (40 MB per inspect), not towards the JSON.
 
 #### Errors
 `{"data": null, "error": "<code>: <message>"}` with one of these codes:
@@ -454,9 +454,10 @@ load internal services or the cloud metadata service and leak their content thro
   `fc00::/7`, `fe80::/10`, multicast, IPv4-mapped/compatible/6to4 forms of the above, NAT64 `64:ff9b::/96` and Teredo.
 - **Request interception** checks every request of the page with the same rules as well (so `blocked` shows full
   URLs), allows only `http(s)`, `data:` and `blob:`, and aborts `media` (video/audio).
-- **Byte limits** (in the proxy): a connection is closed after 10 MB, an inspect stops after 25 MB in total (further
-  requests are refused, `blocked` gets a `budget` entry). With HTTP/2 one connection carries all requests to a host, so
-  the 10 MB apply per connection rather than per file.
+- **Byte limits** (in the proxy): an inspect stops after 40 MB in total (further requests are refused, `blocked` gets a
+  `budget` entry). A plain HTTP response is cut after 10 MB. An HTTPS connection has no limit of its own: the proxy
+  cannot tell its responses apart, and with HTTP/2 one connection carries all requests to a host, so a limit per
+  connection would cut off the images of a shop whose CDN serves them all. A stored image is at most 10 MB.
 - **Extraction in an isolated world.** The metadata is read in a separate JavaScript world of the page (it shares the
   DOM, not the page's scripts), so a page cannot tamper with the built-ins the extraction uses. Only the known
   metadata keys are taken from it; `requestedUrl`, `finalUrl`, `status`, `redirects`, `blocked` and `timings` are

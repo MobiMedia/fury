@@ -13,8 +13,9 @@ const Utils = require("./Utils.js");
 // POST /inspect: screenshot and structured metadata of an arbitrary (hostile) external page. See README.
 
 const MB = 1024 * 1024;
-const MAX_CONNECTION_BYTES = 10 * MB;
-const MAX_TOTAL_BYTES = 25 * MB;
+// A plain HTTP response; a tunnel (HTTPS) counts only towards the total, see InspectProxy
+const MAX_RESPONSE_BYTES = 10 * MB;
+const MAX_TOTAL_BYTES = 40 * MB;
 const MAX_BLOCKED = 50;
 const MAX_METADATA_BYTES = 500 * 1000;
 // Time reserved after navigation for scroll, screenshot, extraction and files
@@ -261,6 +262,18 @@ const captureImages = (page) => {
   };
 };
 
+// The images to load afterwards: those the page did not load itself, each URL once. First the ones the structured data
+// declares (the product photos a caller wants most), then the others (icons, sharing images, hidden variants): the
+// requests start in this order, so the first ones are the least likely to be refused once the byte budget is used up.
+const preloadUrls = (images, capture) => {
+  const missingOf = (structured, max) => [...new Set(images
+    .filter((image) => image.url && (image.source === "structured-data") === structured && !capture.has(image.url))
+    .map((image) => image.url))].slice(0, max);
+  const structured = missingOf(true, MAX_PRELOAD_STRUCTURED);
+  const others = missingOf(false, MAX_PRELOAD).filter((url) => !structured.includes(url));
+  return {urls: [...structured, ...others], timeout: structured.length ? PRELOAD_TIMEOUT_STRUCTURED : PRELOAD_TIMEOUT};
+};
+
 // Gives every image whose bytes are available a file: the captured response body, or Fury's PNG rendering (dataUrl)
 // of an inline image. Returns the images (with file, bytes, rendered, the sniffed format; without dataUrl) and the
 // file contents. The same URL gets one file.
@@ -312,6 +325,7 @@ exports.pickExtracted = pickExtracted;
 exports.sanitizeImages = sanitizeImages;
 exports.sniffImage = sniffImage;
 exports.attachImageFiles = attachImageFiles;
+exports.preloadUrls = preloadUrls;
 
 // Keeps the metadata JSON below ~500 KB by shortening the biggest parts step by step
 const capMetadata = (metadata) => {
@@ -561,12 +575,9 @@ const inspectPage = async ({context, proxy, checker, params, userAgent, userAgen
   let imageFiles = [];
   if (extracted.images?.length) {
     const until = deadline - DEADLINE_MARGIN;
-    const missingOf = (images, max) => [...new Set(images.filter((image) => image.url && !capture.has(image.url)).map((image) => image.url))].slice(0, max);
-    const page = missingOf(extracted.images.filter((image) => image.source !== "structured-data"), MAX_PRELOAD);
-    const structured = missingOf(extracted.images.filter((image) => image.source === "structured-data"), MAX_PRELOAD_STRUCTURED)
-      .filter((url) => !page.includes(url));
-    const missing = [...page, ...structured];
-    const preloadTimeout = Math.min(structured.length ? PRELOAD_TIMEOUT_STRUCTURED : PRELOAD_TIMEOUT, until - Date.now() - 500);
+    const preload = preloadUrls(extracted.images, capture);
+    const missing = preload.urls;
+    const preloadTimeout = Math.min(preload.timeout, until - Date.now() - 500);
     if (missing.length && preloadTimeout > 0) {
       await evaluateIsolated(identitySession, InspectExtract.preloadImages, {urls: missing, timeout: preloadTimeout}).catch((e) => {
         Utils.log(`Inspect: loading images failed: ${e.message}`);
@@ -671,7 +682,7 @@ exports.run = async (manager, body, {signal, allowPrivate}) => {
 
     proxy = await InspectProxy.start({
       checker,
-      maxConnectionBytes: MAX_CONNECTION_BYTES,
+      maxResponseBytes: MAX_RESPONSE_BYTES,
       maxTotalBytes: MAX_TOTAL_BYTES,
       onBlocked: addBlocked
     });

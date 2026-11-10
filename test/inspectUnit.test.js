@@ -195,6 +195,24 @@ test("attachImageFiles: captured bodies and rendered PNGs become files, one file
     "naturalWidth", "naturalHeight", "x", "y", "shape", "area", "visible", "hints", "link", "color", "background", "declaredIn", "implicit"]);
 });
 
+test("preloadUrls: what the page did not load, the images of the structured data first, each URL once", () => {
+  const capture = {has: (url) => url === "https://shop.example/loaded.jpg"};
+  const {urls, timeout} = Inspect.preloadUrls([
+    {url: "https://shop.example/loaded.jpg", source: "img"},
+    {url: "https://shop.example/icon.png", source: "icon"},
+    {url: "https://shop.example/product.jpg", source: "og:image"},
+    {url: null, source: "svg"},
+    {url: "https://shop.example/product.jpg", source: "structured-data"},
+    {url: "https://shop.example/variant.jpg", source: "structured-data"},
+    {url: "https://shop.example/variant.jpg", source: "structured-data"}
+  ], capture);
+
+  assert.deepEqual(urls, ["https://shop.example/product.jpg", "https://shop.example/variant.jpg", "https://shop.example/icon.png"]);
+  assert.equal(timeout, 5000);
+  assert.equal(Inspect.preloadUrls([{url: "https://shop.example/icon.png", source: "icon"}], capture).timeout, 3000);
+  assert.deepEqual(Inspect.preloadUrls([{url: "https://shop.example/loaded.jpg", source: "img"}], capture).urls, []);
+});
+
 test("writeFiles: images get the id prefix, the JSON names them", async () => {
   const dir = tempDir();
   const metadata = {images: [{url: "https://shop.example/logo.svg", file: "image-1.svg"}, {url: "https://shop.example/x.png", file: null}]};
