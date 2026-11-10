@@ -208,13 +208,18 @@ test("the total budget stops everything and refuses new connections", async () =
 });
 
 test("an unreachable target is recorded as connect failure", async () => {
-  // A port nobody listens on
-  const server = net.createServer();
-  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
-  const port = server.address().port;
-  await new Promise((resolve) => server.close(resolve));
+  // The proxy is started first: it listens on a random port too, and Linux may hand out a just freed port again,
+  // the proxy would then connect to itself (200 instead of 403)
+  const {proxy} = await startProxy("1");
 
-  const {proxy} = await startProxy(`127.0.0.1:${port}`);
+  // A port nobody listens on
+  let port;
+  do {
+    const server = net.createServer();
+    await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+    port = server.address().port;
+    await new Promise((resolve) => server.close(resolve));
+  } while (port === proxy.port);
 
   try {
     const {status, socket} = await connect(proxy.port, `127.0.0.1:${port}`);
